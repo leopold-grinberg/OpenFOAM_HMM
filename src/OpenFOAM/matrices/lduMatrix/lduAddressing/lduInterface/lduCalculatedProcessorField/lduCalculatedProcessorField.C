@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2022-2023 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -148,17 +149,35 @@ void Foam::lduCalculatedProcessorField<Type>::addToInternalField
 
     if (add)
     {
+    #ifdef USE_OMP
+        const label fCells = faceCells.size();
+        #pragma omp target teams distribute parallel for if (target:fCells>10000)
+        for (label elemI = 0; elemI < fCells; elemI++)
+        {
+            atomicAccumulator(result[faceCells[elemI]]) += (coeffs[elemI]*vals[elemI]);
+        }
+    #else
         forAll(faceCells, elemI)
         {
             result[faceCells[elemI]] += coeffs[elemI]*vals[elemI];
         }
+    #endif
     }
     else
     {
+    #ifdef USE_OMP
+        const label fCells = faceCells.size();
+        #pragma omp target teams distribute parallel for if (target:fCells>10000)
+        for (label elemI = 0; elemI < fCells; elemI++)
+        {
+            atomicAccumulator(result[faceCells[elemI]]) -= (coeffs[elemI]*vals[elemI]);
+        }
+    #else    
         forAll(faceCells, elemI)
         {
             result[faceCells[elemI]] -= coeffs[elemI]*vals[elemI];
         }
+    #endif
     }
 }
 

@@ -38,6 +38,8 @@ Description
     #define OMP_UNIFIED_MEMORY_REQUIRED
     #pragma omp requires unified_shared_memory
     #endif
+
+#include "AtomicAccumulator.H"
 #endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -51,11 +53,20 @@ void Foam::lduMatrix::sumDiag()
     const labelUList& l = lduAddr().lowerAddr();
     const labelUList& u = lduAddr().upperAddr();
 
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (target:l.size()>10000)
+    for (label face=0; face<l.size(); face++)
+    {
+        atomicAccumulator(Diag[l[face]]) += Lower[face];
+        atomicAccumulator(Diag[u[face]]) += Upper[face];
+    }
+#else
     for (label face=0; face<l.size(); face++)
     {
         Diag[l[face]] += Lower[face];
         Diag[u[face]] += Upper[face];
     }
+#endif
 }
 
 
@@ -68,11 +79,20 @@ void Foam::lduMatrix::negSumDiag()
     const labelUList& l = lduAddr().lowerAddr();
     const labelUList& u = lduAddr().upperAddr();
 
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (target:l.size()>10000)
+    for (label face=0; face<l.size(); face++)
+    {
+        atomicAccumulator(Diag[l[face]]) -= Lower[face];
+        atomicAccumulator(Diag[u[face]]) -= Upper[face];
+    }
+#else
     for (label face=0; face<l.size(); face++)
     {
         Diag[l[face]] -= Lower[face];
         Diag[u[face]] -= Upper[face];
     }
+#endif
 }
 
 
@@ -87,11 +107,20 @@ void Foam::lduMatrix::sumMagOffDiag
     const labelUList& l = lduAddr().lowerAddr();
     const labelUList& u = lduAddr().upperAddr();
 
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (target:l.size()>10000)
+    for (label face = 0; face < l.size(); face++)
+    {
+        atomicAccumulator(sumOff[u[face]]) += mag(Lower[face]);
+        atomicAccumulator(sumOff[l[face]]) += mag(Upper[face]);
+    }
+#else
     for (label face = 0; face < l.size(); face++)
     {
         sumOff[u[face]] += mag(Lower[face]);
         sumOff[l[face]] += mag(Upper[face]);
     }
+#endif
 }
 
 

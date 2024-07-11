@@ -39,6 +39,8 @@ Description
     #define OMP_UNIFIED_MEMORY_REQUIRED
     #pragma omp requires unified_shared_memory
     #endif
+
+#include "AtomicAccumulator.H"
 #endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -90,12 +92,23 @@ void Foam::lduMatrix::Amul
 
     const label nFaces = upper().size();
 
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for thread_limit(32) if (target:nFaces>10000)
+    for (label face=0; face<nFaces; face++)
+    {
+        const label lptr = lPtr[face];
+        const label uptr = uPtr[face];
+
+        atomicAccumulator(ApsiPtr[uptr]) += lowerPtr[face]*psiPtr[lptr];
+        atomicAccumulator(ApsiPtr[lptr]) += upperPtr[face]*psiPtr[uptr];
+    }
+#else
     for (label face=0; face<nFaces; face++)
     {
         ApsiPtr[uPtr[face]] += lowerPtr[face]*psiPtr[lPtr[face]];
         ApsiPtr[lPtr[face]] += upperPtr[face]*psiPtr[uPtr[face]];
     }
-
+#endif
     // Update interface interfaces
     updateMatrixInterfaces
     (
@@ -157,11 +170,23 @@ void Foam::lduMatrix::Tmul
     }
 
     const label nFaces = upper().size();
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+    for (label face=0; face<nFaces; face++)
+    {
+        const label lptr = lPtr[face];
+        const label uptr = uPtr[face];
+
+        atomicAccumulator(TpsiPtr[uptr]) += upperPtr[face]*psiPtr[lptr];
+        atomicAccumulator(TpsiPtr[lptr]) += lowerPtr[face]*psiPtr[uptr];
+    }
+#else
     for (label face=0; face<nFaces; face++)
     {
         TpsiPtr[uPtr[face]] += upperPtr[face]*psiPtr[lPtr[face]];
         TpsiPtr[lPtr[face]] += lowerPtr[face]*psiPtr[uPtr[face]];
     }
+#endif
 
     // Update interface interfaces
     updateMatrixInterfaces
@@ -207,11 +232,23 @@ void Foam::lduMatrix::sumA
         sumAPtr[cell] = diagPtr[cell];
     }
 
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for thread_limit(64) if (target:nFaces>10000)
+    for (label face=0; face<nFaces; face++)
+    {
+        const label uptr = uPtr[face];
+        const label lptr = lPtr[face];
+
+        atomicAccumulator(sumAPtr[uptr]) += lowerPtr[face];
+        atomicAccumulator(sumAPtr[lptr]) += upperPtr[face];
+    }
+#else
     for (label face=0; face<nFaces; face++)
     {
         sumAPtr[uPtr[face]] += lowerPtr[face];
         sumAPtr[lPtr[face]] += upperPtr[face];
     }
+#endif
 
     // Add the interface internal coefficients to diagonal
     // and the interface boundary coefficients to the sum-off-diagonal
@@ -289,12 +326,23 @@ void Foam::lduMatrix::residual
 
     const label nFaces = upper().size();
 
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+    for (label face=0; face<nFaces; face++)
+    {
+        const label lptr = lPtr[face];
+        const label uptr = uPtr[face];
+        
+        atomicAccumulator(rAPtr[uptr]) -= lowerPtr[face]*psiPtr[lptr];
+        atomicAccumulator(rAPtr[lptr]) -= upperPtr[face]*psiPtr[uptr];
+    }
+#else
     for (label face=0; face<nFaces; face++)
     {
         rAPtr[uPtr[face]] -= lowerPtr[face]*psiPtr[lPtr[face]];
         rAPtr[lPtr[face]] -= upperPtr[face]*psiPtr[uPtr[face]];
     }
-
+#endif
     // Update interface interfaces
     updateMatrixInterfaces
     (
@@ -340,11 +388,23 @@ Foam::tmp<Foam::scalarField> Foam::lduMatrix::H1() const
 
         const label nFaces = upper().size();
 
+    #ifdef USE_OMP
+        #pragma omp target teams distribute parallel for thread_limit(64) if (target:nFaces>10000)
+        for (label face=0; face<nFaces; face++)
+        {
+            const label lptr = lPtr[face];
+            const label uptr = uPtr[face];
+
+            atomicAccumulator(H1Ptr[uptr]) -= lowerPtr[face];
+            atomicAccumulator(H1Ptr[lptr]) -= upperPtr[face];
+        }
+    #else
         for (label face=0; face<nFaces; face++)
         {
             H1Ptr[uPtr[face]] -= lowerPtr[face];
             H1Ptr[lPtr[face]] -= upperPtr[face];
         }
+    #endif
     }
 
     return tH1;

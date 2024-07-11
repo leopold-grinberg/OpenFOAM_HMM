@@ -37,6 +37,8 @@ Description
     #define OMP_UNIFIED_MEMORY_REQUIRED
     #pragma omp requires unified_shared_memory
     #endif
+
+#include "AtomicAccumulator.H"
 #endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -60,11 +62,23 @@ Foam::tmp<Foam::Field<Type>> Foam::lduMatrix::H(const Field<Type>& psi) const
 
         const label nFaces = upper().size();
 
+    #ifdef USE_OMP
+        #pragma omp target teams distribute parallel for thread_limit(64) if (target:nFaces>10000)
+        for (label face=0; face<nFaces; face++)
+        {
+            const label lptr = lPtr[face];
+            const label uptr = uPtr[face];
+
+            atomicAccumulator(HpsiPtr[uptr]) -= lowerPtr[face]*psiPtr[lptr];
+            atomicAccumulator(HpsiPtr[lptr]) -= upperPtr[face]*psiPtr[uptr];
+        }
+    #else
         for (label face=0; face<nFaces; face++)
         {
             HpsiPtr[uPtr[face]] -= lowerPtr[face]*psiPtr[lPtr[face]];
             HpsiPtr[lPtr[face]] -= upperPtr[face]*psiPtr[uPtr[face]];
         }
+    #endif
     }
 
     return tHpsi;
@@ -105,7 +119,7 @@ Foam::lduMatrix::faceH(const Field<Type>& psi) const
                 Upper[face]*psi[u[face]]
               - Lower[face]*psi[l[face]];
         }
-
+ 
         return tfaceHpsi;
     }
 

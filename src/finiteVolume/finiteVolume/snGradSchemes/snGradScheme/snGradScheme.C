@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2019-2021 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -31,6 +32,14 @@ License
 #include "volFields.H"
 #include "surfaceFields.H"
 #include "HashTable.H"
+
+#ifdef USE_OMP
+#include <omp.h>
+    #ifndef OMP_UNIFIED_MEMORY_REQUIRED
+    #define OMP_UNIFIED_MEMORY_REQUIRED
+    #pragma omp requires unified_shared_memory
+    #endif
+#endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -125,7 +134,11 @@ snGradScheme<Type>::snGrad
     const labelUList& owner = mesh.owner();
     const labelUList& neighbour = mesh.neighbour();
 
-    forAll(owner, facei)
+    const label nFaces = owner.size();
+#ifdef USE_OMP    
+    #pragma omp target teams distribute parallel for if (target:nFaces > 10000)
+#endif
+    for( label facei = 0; facei < nFaces; ++facei)
     {
         ssf[facei] =
             deltaCoeffs[facei]*(vf[neighbour[facei]] - vf[owner[facei]]);

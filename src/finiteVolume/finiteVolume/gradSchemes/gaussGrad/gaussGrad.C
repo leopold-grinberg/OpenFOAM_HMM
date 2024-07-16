@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2018-2021 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -28,6 +29,17 @@ License
 
 #include "gaussGrad.H"
 #include "extrapolatedCalculatedFvPatchField.H"
+
+#ifdef USE_OMP
+#include <omp.h>
+    #ifndef OMP_UNIFIED_MEMORY_REQUIRED
+    #define OMP_UNIFIED_MEMORY_REQUIRED
+    #pragma omp requires unified_shared_memory
+    #endif
+
+#include "macros.H"
+#include "AtomicAccumulator.H"
+#endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -78,6 +90,92 @@ Foam::fv::gaussGrad<Type>::gradf
     Field<GradType>& igGrad = gGrad;
     const Field<Type>& issf = ssf;
 
+#ifdef USE_OMP
+    static label *offsets = NULL;
+    static label *face_list = NULL;
+    static label *face_sign = NULL;
+
+    if (face_list == NULL){
+       offsets = new label[igGrad.size()+1];
+       label *count = new label[igGrad.size()];
+
+       for (label i = 0; i < igGrad.size(); ++i ) count[i] = 0;
+
+       for (label facei=0; facei < owner.size(); ++facei)
+       {
+        const label own = owner[facei];
+        const label nei = neighbour[facei];
+        count[own]++;
+        count[nei]++;
+       }
+
+       offsets[0] = 0;
+       for (label i = 0; i < igGrad.size(); ++i ){
+         offsets[i+1] = offsets[i]+count[i];
+       }
+       face_list = new label[offsets[igGrad.size()]];
+       face_sign = new label[offsets[igGrad.size()]];
+
+       //list faces for each cell
+       for (label i = 0; i < igGrad.size(); ++i ) count[i] = 0;
+
+       label *ptr_to_face_list, *ptr_to_face_sign;
+
+       for (label facei=0; facei < owner.size(); ++facei){
+
+        const label own = owner[facei];
+        const label nei = neighbour[facei];
+
+        /* face_list  has pairs [own] [nei]   this can be used to determine a sign
+         * for accumulating Sfssf   */
+        ptr_to_face_list = &face_list[ offsets[own] + count[own] ];
+        ptr_to_face_sign = &face_sign[ offsets[own] + count[own] ];
+        ptr_to_face_list[0] = facei;
+        ptr_to_face_sign[0] = 1.0;
+        count[own]++;
+
+        ptr_to_face_list = &face_list[ offsets[nei] + count[nei] ];
+        ptr_to_face_sign = &face_sign[ offsets[nei] + count[nei] ];
+        ptr_to_face_list[0] = facei;
+        ptr_to_face_sign[0] = -1.0;
+        count[nei]++;
+       }
+       delete[] count;
+    }
+    
+    const label nCells = igGrad.size();
+    #pragma omp target teams distribute parallel for thread_limit(256) if(nCells>10000 )
+    for (label celli = 0; celli < nCells; ++celli){
+
+        const label *ptr_to_face_list = &face_list[offsets[celli]];
+        const label *ptr_to_face_sign = &face_sign[offsets[celli]];
+        const label nFaces = offsets[celli+1] - offsets[celli];
+
+        #pragma unroll 2
+        for ( label f = 0; f < nFaces; ++f){
+           const label facei = ptr_to_face_list[f];
+           const GradType Sfssf = Sf[facei]*issf[facei]*ptr_to_face_sign[f];
+           igGrad[celli] += Sfssf;
+        }
+    }
+    
+    forAll(mesh.boundary(), patchi)
+    {
+        const labelUList& pFaceCells =
+            mesh.boundary()[patchi].faceCells();
+
+        const vectorField& pSf = mesh.Sf().boundaryField()[patchi];
+
+        const fvsPatchField<Type>& pssf = ssf.boundaryField()[patchi];
+
+        label meshBoundaryPatchSize = mesh.boundary()[patchi].size();
+        #pragma omp target teams distribute parallel for if (target:meshBoundaryPatchSize>10000)
+        for(label facei = 0; facei < meshBoundaryPatchSize; ++facei)
+        {
+            atomicAccumulator(igGrad[pFaceCells[facei]]) += pSf[facei]*pssf[facei];
+        }
+    }
+#else
     forAll(owner, facei)
     {
         const GradType Sfssf = Sf[facei]*issf[facei];
@@ -100,7 +198,7 @@ Foam::fv::gaussGrad<Type>::gradf
             igGrad[pFaceCells[facei]] += pSf[facei]*pssf[facei];
         }
     }
-
+#endif
     igGrad /= mesh.V();
 
     gGrad.correctBoundaryConditions();

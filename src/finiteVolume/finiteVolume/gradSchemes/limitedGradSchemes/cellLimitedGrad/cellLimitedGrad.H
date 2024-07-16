@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -47,6 +48,16 @@ SourceFiles
 
 #include "gradScheme.H"
 #include "Field.H"
+
+#ifdef USE_OMP
+#include <omp.h>
+    #ifndef OMP_UNIFIED_MEMORY_REQUIRED
+    #define OMP_UNIFIED_MEMORY_REQUIRED
+    #pragma omp requires unified_shared_memory
+    #endif
+
+#include <type_traits>
+#endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -178,8 +189,13 @@ inline void cellLimitedGrad<Type, Limiter>::limitFaceCmpt
     {
         return;
     }
-
+#ifdef USE_OMP
+    scalar limiter_r = Limiter::limiter(r);
+    #pragma omp atomic compare
+    limiter = limiter > limiter_r? limiter_r : limiter;
+#else
     limiter = min(limiter, Limiter::limiter(r));
+#endif
 }
 
 

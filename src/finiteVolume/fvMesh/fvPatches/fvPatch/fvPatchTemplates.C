@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2019-2023 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -28,6 +29,14 @@ License
 
 #include "fvPatch.H"
 
+#ifdef USE_OMP
+#include <omp.h>
+    #ifndef OMP_UNIFIED_MEMORY_REQUIRED
+    #define OMP_UNIFIED_MEMORY_REQUIRED
+    #pragma omp requires unified_shared_memory
+    #endif
+#endif
+
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
 template<class Type>
@@ -42,6 +51,9 @@ void Foam::fvPatch::patchInternalField
 
     pfld.resize_nocopy(len);
 
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (target:len > 10000)
+#endif
     for (label i = 0; i < len; ++i)
     {
         pfld[i] = internalData[addressing[i]];

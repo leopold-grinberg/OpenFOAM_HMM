@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -29,6 +30,14 @@ License
 #include "fvMesh.H"
 #include "volFields.H"
 #include "surfaceFields.H"
+
+#ifdef USE_OMP
+#include <omp.h>
+    #ifndef OMP_UNIFIED_MEMORY_REQUIRED
+    #define OMP_UNIFIED_MEMORY_REQUIRED
+    #pragma omp requires unified_shared_memory
+    #endif
+#endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -87,7 +96,10 @@ Foam::linearUpwindV<Type>::correction
         volMesh
     >& gradVf = tgradVf();
 
-    forAll(faceFlux, facei)
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (target:faceFlux.size() > 10000)
+#endif
+    for (label facei = 0; facei < faceFlux.size(); ++facei)
     {
         vector maxCorr;
 
@@ -155,7 +167,10 @@ Foam::linearUpwindV<Type>::correction
             // Build the d-vectors
             vectorField pd(Cf.boundaryField()[patchi].patch().delta());
 
-            forAll(pOwner, facei)
+        #ifdef USE_OMP
+            #pragma omp target teams distribute parallel for if (target:pOwner.size() > 10000)
+        #endif
+            for (label facei = 0; facei < pOwner.size(); ++facei)
             {
                 label own = pOwner[facei];
 

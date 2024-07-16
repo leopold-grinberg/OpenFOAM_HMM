@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2019-2023 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -32,6 +33,13 @@ License
 #include "geometricOneField.H"
 #include "coupledFvPatchField.H"
 
+#ifdef USE_OMP
+#include <omp.h>
+    #ifndef OMP_UNIFIED_MEMORY_REQUIRED
+    #define OMP_UNIFIED_MEMORY_REQUIRED
+    #pragma omp requires unified_shared_memory
+    #endif
+#endif
 // * * * * * * * * * * * * * * * * * Selectors * * * * * * * * * * * * * * * //
 
 template<class Type>
@@ -168,6 +176,9 @@ Foam::surfaceInterpolationScheme<Type>::interpolate
 
     Field<Type>& sfi = sf.primitiveFieldRef();
 
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if(target:P.size() > 10000)
+#endif
     for (label fi=0; fi<P.size(); fi++)
     {
         sfi[fi] = lambda[fi]*vfi[P[fi]] + y[fi]*vfi[N[fi]];
@@ -261,7 +272,9 @@ Foam::surfaceInterpolationScheme<Type>::dotInterpolate
     Field<RetType>& sfi = sf.primitiveFieldRef();
 
     const typename SFType::Internal& Sfi = Sf.internalField();
-
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (target:P.size() > 10000)
+#endif
     for (label fi=0; fi<P.size(); fi++)
     {
         // Same as:

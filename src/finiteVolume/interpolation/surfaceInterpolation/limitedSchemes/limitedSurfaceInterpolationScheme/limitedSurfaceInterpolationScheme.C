@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2019-2021 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -30,6 +31,14 @@ License
 #include "volFields.H"
 #include "surfaceFields.H"
 #include "coupledFvPatchField.H"
+
+#ifdef USE_OMP
+#include <omp.h>
+    #ifndef OMP_UNIFIED_MEMORY_REQUIRED
+    #define OMP_UNIFIED_MEMORY_REQUIRED
+    #pragma omp requires unified_shared_memory
+    #endif
+#endif
 
 // * * * * * * * * * * * * * * * * * Selectors * * * * * * * * * * * * * * * //
 
@@ -146,7 +155,10 @@ Foam::limitedSurfaceInterpolationScheme<Type>::weights
 
     scalarField& pWeights = Weights.primitiveFieldRef();
 
-    forAll(pWeights, face)
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (target:pWeights.size() > 10000)
+#endif
+    for (label face = 0; face < pWeights.size(); ++face)
     {
         pWeights[face] =
             pWeights[face]*CDweights[face]
@@ -163,7 +175,10 @@ Foam::limitedSurfaceInterpolationScheme<Type>::weights
         const scalarField& pCDweights = CDweights.boundaryField()[patchi];
         const scalarField& pFaceFlux = faceFlux_.boundaryField()[patchi];
 
-        forAll(pWeights, face)
+    #ifdef USE_OMP
+        #pragma omp target teams distribute parallel for if (target:pWeights.size() > 10000)
+    #endif 
+        for (label face = 0; face < pWeights.size(); ++face)
         {
             pWeights[face] =
                 pWeights[face]*pCDweights[face]

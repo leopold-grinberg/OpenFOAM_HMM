@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2016-2023 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -33,6 +34,14 @@ License
 #include "jumpCyclicFvPatchField.H"
 #include "cyclicPolyPatch.H"
 #include "cyclicAMIPolyPatch.H"
+
+#ifdef USE_OMP
+#include <omp.h>
+    #ifndef OMP_UNIFIED_MEMORY_REQUIRED
+    #define OMP_UNIFIED_MEMORY_REQUIRED
+    #pragma omp requires unified_shared_memory
+    #endif
+#endif
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
@@ -245,7 +254,10 @@ Foam::solverPerformance Foam::fvMatrix<Foam::scalar>::solveSegregated
             const label cellOffset = lduMeshPtr()->cellOffsets()[fieldi];
             const auto& psiInternal = this->psi(fieldi).primitiveField();
 
-            forAll(psiInternal, localCellI)
+        #ifdef USE_OMP
+            #pragma omp target teams distribute parallel for if (target:psiInternal.size() > 10000)
+        #endif
+            for (label localCellI = 0; localCellI < psiInternal.size(); ++localCellI)
             {
                 psi[cellOffset + localCellI] = psiInternal[localCellI];
             }
@@ -276,7 +288,10 @@ Foam::solverPerformance Foam::fvMatrix<Foam::scalar>::solveSegregated
 
             const label cellOffset = lduMeshPtr()->cellOffsets()[fieldi];
 
-            forAll(psiInternal, localCellI)
+        #ifdef USE_OMP
+            #pragma omp target teams distribute parallel for if (target:psiInternal.size() > 10000)
+        #endif
+            for (label localCellI = 0; localCellI < psiInternal.size(); ++localCellI)
             {
                 psiInternal[localCellI] = psi[localCellI + cellOffset];
             }

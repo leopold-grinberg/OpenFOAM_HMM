@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2016-2023 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -41,6 +42,17 @@ License
 
 #include "processorLduInterfaceField.H"
 
+#ifdef USE_OMP
+#include <omp.h>
+    #ifndef OMP_UNIFIED_MEMORY_REQUIRED
+    #define OMP_UNIFIED_MEMORY_REQUIRED
+    #pragma omp requires unified_shared_memory
+    #endif
+
+#include "macros.H"
+#include "AtomicAccumulator.H"
+#endif
+
 // * * * * * * * * * * * * Protected Member Functions  * * * * * * * * * * * //
 
 template<class Type>
@@ -59,11 +71,19 @@ void Foam::fvMatrix<Type>::addToInternalField
             << ") and field (" << pf.size() << ") are different sizes" << endl
             << abort(FatalError);
     }
-
+#ifdef USE_OMP
+    const label nFaces = addr.size();
+    #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+    for (label facei=0; facei<nFaces; ++facei)
+    {
+        atomicAccumulator(intf[addr[facei]]) += pf[facei];
+    }
+#else
     forAll(addr, facei)
     {
         intf[addr[facei]] += pf[facei];
     }
+#endif
 }
 
 
@@ -97,11 +117,19 @@ void Foam::fvMatrix<Type>::subtractFromInternalField
             << ") and field (" << pf.size() << ") are different sizes" << endl
             << abort(FatalError);
     }
-
+#ifdef USE_OMP
+    const label nFaces = addr.size();
+    #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+    for (label facei=0; facei<nFaces; ++facei)
+    {
+        atomicAccumulator(intf[addr[facei]])  -= pf[facei];
+    }
+#else
     forAll(addr, facei)
     {
         intf[addr[facei]] -= pf[facei];
     }
+#endif
 }
 
 
@@ -208,12 +236,21 @@ void Foam::fvMatrix<Type>::addBoundarySource
                     const Field<Type>& pnf = tpnf();
 
                     const labelUList& addr = lduAddr().patchAddr(patchi);
-
+                #ifdef USE_OMP
+                    const label nFaces = addr.size();
+                    #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+                    for (label facei=0; facei<nFaces; ++facei)
+                    {
+                        atomicAccumulator(source[addr[facei]]) +=
+                            cmptMultiply(pbc[facei], pnf[facei]);
+                    }
+                #else
                     forAll(addr, facei)
                     {
                         source[addr[facei]] +=
                             cmptMultiply(pbc[facei], pnf[facei]);
                     }
+                #endif
                 }
             }
         }
@@ -1141,20 +1178,39 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
 
                 // For coupled boundaries add the diagonal and
                 // off-diagonal contributions
+            #ifdef USE_OMP
+                const label nFaces = pa.size();
+                #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+                for (label face=0; face<nFaces; ++face)
+                {
+                    atomicAccumulator(D[pa[face]]) += component(iCoeffs[face], 0);
+                    atomicAccumulator(sumOff[pa[face]]) += mag(component(pCoeffs[face], 0));
+                }
+            #else    
                 forAll(pa, face)
                 {
                     D[pa[face]] += component(iCoeffs[face], 0);
                     sumOff[pa[face]] += mag(component(pCoeffs[face], 0));
                 }
+            #endif
             }
             else
             {
                 // For non-coupled boundaries add the maximum magnitude diagonal
                 // contribution to ensure stability
+            #ifdef USE_OMP
+                const label nFaces = pa.size();
+                #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+                for (label face=0; face<nFaces; ++face)
+                {
+                    atomicAccumulator(D[pa[face]]) += cmptMax(cmptMag(iCoeffs[face]));
+                }
+            #else 
                 forAll(pa, face)
                 {
                     D[pa[face]] += cmptMax(cmptMag(iCoeffs[face]));
                 }
+            #endif
             }
         }
     }
@@ -1212,7 +1268,11 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
 
     // Ensure the matrix is diagonally dominant...
     // Assumes that the central coefficient is positive and ensures it is
-    forAll(D, celli)
+    const label nCells = D.size();
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (target:nCells>10000)
+#endif
+    for(label celli=0; celli<nCells; ++celli)
     {
         D[celli] = max(mag(D[celli]), sumOff[celli]);
     }
@@ -1232,17 +1292,35 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
 
             if (ptf.coupled())
             {
+            #ifdef USE_OMP
+                const label nFaces = pa.size();
+                #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+                for(label face=0; face<nFaces; face++)
+                {
+                    atomicAccumulator(D[pa[face]]) -= component(iCoeffs[face], 0);
+                }
+            #else
                 forAll(pa, face)
                 {
                     D[pa[face]] -= component(iCoeffs[face], 0);
                 }
+            #endif
             }
             else
             {
+            #ifdef USE_OMP
+                const label nFaces = pa.size();
+                #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+                for(label face=0; face<nFaces; face++)
+                {
+                    atomicAccumulator(D[pa[face]]) -= cmptMin(iCoeffs[face]);
+                }
+            #else    
                 forAll(pa, face)
                 {
                     D[pa[face]] -= cmptMin(iCoeffs[face]);
                 }
+            #endif
             }
         }
     }

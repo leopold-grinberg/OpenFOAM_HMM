@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2017-2023 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -58,6 +59,21 @@ SourceFiles
 
 #include <iterator>
 #include <vector>  // i.e, std::vector
+
+#ifdef USE_OMP
+#include <omp.h>
+    #ifndef OMP_UNIFIED_MEMORY_REQUIRED
+    #define OMP_UNIFIED_MEMORY_REQUIRED
+    #pragma omp requires unified_shared_memory
+    #endif
+
+    //forward declaration of Foam::Vector<>
+    namespace Foam 
+    {
+    template<typename T> class Vector;
+    template<typename T> class Tensor;
+    }
+#endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 

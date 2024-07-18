@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2017-2023 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -321,10 +322,29 @@ void Foam::List<T>::resize(const label len, const T& val)
     // Fill trailing part with new values
     if (oldLen < this->size_)
     {
+    #ifdef USE_OMP
+        if constexpr ( std::is_same<T,scalar>() || std::is_same<T,int>() || std::is_same<T,unsigned int>() || std::is_same<T,Foam::Vector<scalar>>() )
+        {
+            T * __restrict__ vp_ptr = this->begin();
+            #pragma omp target teams distribute parallel for if (target:(len-oldLen) > 10000)
+            for (label i=oldLen; i<len; ++i)
+            {
+                vp_ptr[i] = val;
+            }
+        }
+        else
+        {
+            std::fill
+            (
+                (this->v_ + oldLen), (this->v_ + this->size_), val
+            );
+        }
+    #else    
         std::fill
         (
             (this->v_ + oldLen), (this->v_ + this->size_), val
         );
+    #endif
     }
 }
 

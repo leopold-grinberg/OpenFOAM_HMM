@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2015-2023 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -28,6 +29,7 @@ License
 
 #include "error.H"
 // <algorithm> already included by stdFoam.H
+#include <type_traits>
 
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
 
@@ -52,6 +54,34 @@ inline Foam::UList<T>::UList(T* __restrict__ v, const label len) noexcept
 template<class T>
 inline void Foam::UList<T>::fill_uniform(const T& val)
 {
+#ifdef USE_OMP
+    if constexpr( std::is_same<T,scalar>() || std::is_same<T,int>() || std::is_same<T,unsigned int>() || 
+                  std::is_same<T,Foam::Vector<scalar>>() || std::is_same<T,Foam::Tensor<scalar>>()
+                )
+    {
+        T * __restrict__ vp_ptr = this->begin();
+        const label len = this->size_;
+        #pragma omp target teams distribute parallel for if (target:len > 10000)
+        for (label i=0; i < len; i+=2)
+        {
+            #pragma unroll 2
+            for (label j = i; j < i+2 && j < len; ++j)
+            {   
+                vp_ptr[j] = val;
+            }            
+        }
+    }
+    else
+    {
+        // Can dispatch with
+        // - std::execution::parallel_unsequenced_policy
+        // - std::execution::unsequenced_policy
+        std::fill_n
+        (
+            this->v_, this->size_, val
+        );
+    }
+#else    
     // Can dispatch with
     // - std::execution::parallel_unsequenced_policy
     // - std::execution::unsequenced_policy
@@ -59,6 +89,7 @@ inline void Foam::UList<T>::fill_uniform(const T& val)
     (
         this->v_, this->size_, val
     );
+#endif
 }
 
 
@@ -71,6 +102,34 @@ inline void Foam::UList<T>::fill_uniform(const Foam::zero)
 
     if (is_contiguous<T>::value)
     {
+    #ifdef USE_OMP
+        if constexpr( std::is_same<T,scalar>() || std::is_same<T,int>() || std::is_same<T,unsigned int>() || 
+                      std::is_same<T,Foam::Vector<scalar>>() || std::is_same<T,Foam::Tensor<scalar>>()
+                    )
+        {
+            T * __restrict__ vp_ptr = this->begin();
+            const label len = this->size_;
+            #pragma omp target teams distribute parallel for if (target:len > 10000)
+            for (label i=0; i < len; i+=2)
+            {
+                #pragma unroll 2
+                for (label j = i; j < i+2 && j < len; ++j)
+                {   
+                    vp_ptr[j] = Foam::zero{};
+                }            
+            }
+        }
+        else
+        {
+            // Can dispatch with
+            // - std::execution::parallel_unsequenced_policy
+            // - std::execution::unsequenced_policy
+            std::fill_n
+            (
+                this->data_bytes(), this->size_bytes(), char(0)
+            );
+        }
+    #else     
         // Can dispatch with
         // - std::execution::parallel_unsequenced_policy
         // - std::execution::unsequenced_policy
@@ -78,12 +137,17 @@ inline void Foam::UList<T>::fill_uniform(const Foam::zero)
         (
             this->data_bytes(), this->size_bytes(), char(0)
         );
+    #endif
     }
     else
     {
         const auto last = (this->v_ + this->size_);
 
-        for (auto first = this->v_; (first != last); (void)++first)
+    #ifdef USE_OMP
+        const label len = this->size_;
+        #pragma omp target teams distribute parallel for if (target:len > 10000)
+    #endif
+        for (auto first = this->v_; (first != last); ++first)
         {
             *first = Foam::zero{};
         }

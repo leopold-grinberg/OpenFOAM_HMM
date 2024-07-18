@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2017-2023 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -113,10 +114,33 @@ void Foam::UList<T>::deepCopy(const UList<T>& list)
     }
     else if (this->size_ > 0)
     {
+    #ifdef USE_OMP
+        if constexpr( std::is_same<T,scalar>() || std::is_same<T,int>() || std::is_same<T,unsigned int>() || 
+                      std::is_same<T,Foam::Vector<scalar>>() || std::is_same<T,Foam::Tensor<scalar>>()
+                    )
+        {
+            T * __restrict__ vp_ptr         = this->begin();
+            const T * __restrict__ ap_ptr   = list.begin();
+            const label len = this->size_;
+            #pragma omp target teams distribute parallel for if (target:len > 10000)
+            for (label i=0; i < len; ++i)
+            {
+                vp_ptr[i] = ap_ptr[i];
+            }
+        }
+        else
+        {
+            // Can dispatch with
+            // - std::execution::parallel_unsequenced_policy
+            // - std::execution::unsequenced_policy
+            std::copy(list.cbegin(), list.cend(), this->v_);
+        }
+    #else    
         // Can dispatch with
         // - std::execution::parallel_unsequenced_policy
         // - std::execution::unsequenced_policy
         std::copy(list.cbegin(), list.cend(), this->v_);
+    #endif
     }
 }
 
@@ -142,11 +166,32 @@ void Foam::UList<T>::deepCopy(const IndirectListBase<T, Addr>& list)
         const label len = this->size_;
 
         auto iter = this->v_;
-
+    
+    #ifdef USE_OMP
+        if constexpr( std::is_same<T,scalar>() || std::is_same<T,int>() || std::is_same<T,unsigned int>() || 
+                      std::is_same<T,Foam::Vector<scalar>>() || std::is_same<T,Foam::Tensor<scalar>>()
+                    )
+        {
+            #pragma omp target teams distribute parallel for if (target:len > 10000)
+            for (label i = 0; i < len; ++i)
+            {
+                *iter = list[i];
+                ++iter;
+            }
+        }
+        else
+        {
+            for (label i = 0; i < len; (void)++i, (void)++iter)
+            {
+                *iter = list[i];
+            }
+        }
+    #else
         for (label i = 0; i < len; (void)++i, (void)++iter)
         {
             *iter = list[i];
         }
+    #endif
     }
 }
 

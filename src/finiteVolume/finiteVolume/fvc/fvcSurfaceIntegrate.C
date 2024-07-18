@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -28,6 +29,16 @@ License
 #include "fvcSurfaceIntegrate.H"
 #include "fvMesh.H"
 #include "extrapolatedCalculatedFvPatchFields.H"
+
+#ifdef USE_OMP
+#include <omp.h>
+    #ifndef OMP_UNIFIED_MEMORY_REQUIRED
+    #define OMP_UNIFIED_MEMORY_REQUIRED
+    #pragma omp requires unified_shared_memory
+    #endif
+
+#include "AtomicAccumulator.H"
+#endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -55,6 +66,35 @@ void surfaceIntegrate
 
     const Field<Type>& issf = ssf;
 
+#ifdef USE_OMP
+    const label nFaces = owner.size();
+    #pragma omp target teams distribute parallel for if (target:nFaces > 20000)
+    for (label facei = 0; facei < nFaces; facei += 2)
+    {
+        label nF = (nFaces - facei) > 1 ? 2 : 1;
+        #pragma unroll 2
+        for (label i=0; i<nF; ++i)
+        {
+            atomicAccumulator(ivf[owner[facei+i]]) += issf[facei+i];
+            atomicAccumulator(ivf[neighbour[facei+i]]) -= issf[facei+i];
+        }
+    }
+
+    forAll(mesh.boundary(), patchi)
+    {
+        const labelUList& pFaceCells =
+            mesh.boundary()[patchi].faceCells();
+
+        const fvsPatchField<Type>& pssf = ssf.boundaryField()[patchi];
+
+        const label nFaces = mesh.boundary()[patchi].size();
+        #pragma omp target teams distribute parallel for if (target:nFaces > 20000)
+        for (label facei = 0; facei < nFaces; ++facei)
+        {
+            atomicAccumulator(ivf[pFaceCells[facei]]) += pssf[facei];
+        }
+    }
+#else
     forAll(owner, facei)
     {
         ivf[owner[facei]] += issf[facei];
@@ -73,6 +113,7 @@ void surfaceIntegrate
             ivf[pFaceCells[facei]] += pssf[facei];
         }
     }
+#endif
 
     ivf /= mesh.Vsc();
 }
@@ -160,6 +201,35 @@ surfaceSum
     const labelUList& owner = mesh.owner();
     const labelUList& neighbour = mesh.neighbour();
 
+#ifdef USE_OMP
+    const label nFaces = owner.size();
+    #pragma omp target teams distribute parallel for if (target:nFaces > 20000)
+    for (label facei = 0; facei < nFaces; facei += 2)
+    {
+        label nF = (nFaces - facei) > 1 ? 2 : 1;
+        #pragma unroll 2
+        for (label i=0; i<nF; ++i)
+        {
+            atomicAccumulator(vf[owner[facei+i]]) += ssf[facei+i];
+            atomicAccumulator(vf[neighbour[facei+i]]) += ssf[facei+i];
+        }
+    }
+
+    forAll(mesh.boundary(), patchi)
+    {
+        const labelUList& pFaceCells =
+            mesh.boundary()[patchi].faceCells();
+
+        const fvsPatchField<Type>& pssf = ssf.boundaryField()[patchi];
+
+        const label nFaces = mesh.boundary()[patchi].size();
+        #pragma omp target teams distribute parallel for if (target:nFaces > 20000)
+        for(label facei = 0; facei < nFaces; ++facei)
+        {
+            atomicAccumulator(vf[pFaceCells[facei]]) += pssf[facei];
+        }
+    }
+#else
     forAll(owner, facei)
     {
         vf[owner[facei]] += ssf[facei];
@@ -178,6 +248,7 @@ surfaceSum
             vf[pFaceCells[facei]] += pssf[facei];
         }
     }
+#endif
 
     vf.correctBoundaryConditions();
 

@@ -35,6 +35,16 @@ Description
 #include "error.H"
 #include "ListLoopM.H"  // For list access macros
 
+#ifdef USE_OMP
+#include <omp.h>
+    #ifndef OMP_UNIFIED_MEMORY_REQUIRED
+    #define OMP_UNIFIED_MEMORY_REQUIRED
+    #pragma omp requires unified_shared_memory
+    #endif
+
+#include <type_traits>
+#endif
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 namespace Foam
@@ -144,8 +154,35 @@ void checkFields
 )
 {}
 
-#endif
+//====
+// a boolean function to check the data-types 
+// template<class Type1, class Type2>
+// bool checkTypes
+// (
+//     const UList<Type1>&,
+//     const UList<Type2>&
+// )
+// {
+//     if constexpr ((std::is_same<Type1,scalar>() && std::is_same<Type2,scalar>())||
+//                   (std::is_same<Type1,Vector<scalar>>() && std::is_same<Type2,Vector<scalar>>())||
+//                   (std::is_same<Type1,SymmTensor<scalar>>() && std::is_same<Type2,SymmTensor<scalar>>())||
+//                   (std::is_same<Type1,Tensor<scalar>>() && std::is_same<Type2,Tensor<scalar>>())||
+//                   (std::is_same<Type1,SymmTensor<scalar>>() && std::is_same<Type2,Vector<scalar>>())||
+//                   (std::is_same<Type1,Vector<scalar>>() && std::is_same<Type2,SymmTensor<scalar>>())||
+//                   (std::is_same<Type1,Vector<scalar>>() && std::is_same<Type2,Tensor<scalar>>())||
+//                   (std::is_same<Type1,Tensor<scalar>>() && std::is_same<Type2,Vector<scalar>>())||
+//                   (std::is_same<Type1,SymmTensor<scalar>>() && std::is_same<Type2,Tensor<scalar>>())||
+//                   (std::is_same<Type1,Tensor<scalar>>() && std::is_same<Type2,SymmTensor<scalar>>())||
+//                   (std::is_same<Type1,Tensor<int>>() && std::is_same<Type2,Tensor<int>>())
+//                  )
+//     {
+//         return true;
+//     }
+//     else
+//         return false;
+// }
 
+#endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -162,11 +199,29 @@ void checkFields
                                                                                \
     /* Loop: f1 OP FUNC(f2) */                                                 \
     const label loop_len = (f1).size();                                        \
-                                                                               \
-    /* pragmas... */                                                           \
-    for (label i = 0; i < loop_len; ++i)                                       \
-    {                                                                          \
-        (f1P[i]) OP FUNC(f2P[i]);                                              \
+    if constexpr((std::is_same<typeF1,int>() && std::is_same<typeF2,int>())||                           \
+                 (std::is_same<typeF1,scalar>() && std::is_same<typeF2,scalar>())||                     \
+                 (std::is_same<typeF1,Vector<scalar>>() && std::is_same<typeF2,Vector<scalar>>())||     \
+                 (std::is_same<typeF1,Vector<int>>() && std::is_same<typeF2,Vector<int>>())||           \
+                 (std::is_same<typeF1,SymmTensor<int>>() && std::is_same<typeF2,SymmTensor<int>>())||   \
+                 (std::is_same<typeF1,SymmTensor<scalar>>() && std::is_same<typeF2,Vector<scalar>>())|| \
+                 (std::is_same<typeF1,SymmTensor<scalar>>() && std::is_same<typeF2,Tensor<scalar>>())|| \
+                 (std::is_same<typeF1,Tensor<scalar>>() && std::is_same<typeF2,Vector<scalar>>())||     \
+                 (std::is_same<typeF1,Vector<scalar>>() && std::is_same<typeF2,Tensor<scalar>>())||     \
+                 (std::is_same<typeF1,Tensor<int>>() && std::is_same<typeF2,Tensor<int>>())             \
+                ){                                                             \
+        _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)") \
+        for (label i = 0; i < loop_len; ++i)                                   \
+        {                                                                      \
+            (f1P[i]) OP FUNC(f2P[i]);                                          \
+        }                                                                      \
+    }                                                                          \
+    else{                                                                      \
+        /* pragmas... */                                                       \
+        for (label i = 0; i < loop_len; ++i)                                   \
+        {                                                                      \
+            (f1P[i]) OP FUNC(f2P[i]);                                          \
+        }                                                                      \
     }                                                                          \
 }
 
@@ -185,10 +240,22 @@ void checkFields
     /* Loop: f1 OP f2.FUNC() */                                                \
     const label loop_len = (f1).size();                                        \
                                                                                \
-    /* pragmas... */                                                           \
-    for (label i = 0; i < loop_len; ++i)                                       \
+    if constexpr(!(std::is_same<typeF1,SymmTensor<scalar>>() && std::is_same<typeF2,SymmTensor<scalar>>())&&\
+                 !(std::is_same<typeF1,Tensor<scalar>>() && std::is_same<typeF2,Tensor<scalar>>())          \
+                ){                                                             \
+        /* pragmas... */                                                       \
+        _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)") \
+        for (label i = 0; i < loop_len; ++i)                                   \
+        {                                                                      \
+            (f1P[i]) OP (f2P[i]).FUNC();                                       \
+        }                                                                      \
+    }                                                                          \
+    else                                                                       \
     {                                                                          \
-        (f1P[i]) OP (f2P[i]).FUNC();                                           \
+        for (label i = 0; i < loop_len; ++i)                                   \
+        {                                                                      \
+            (f1P[i]) OP (f2P[i]).FUNC();                                       \
+        }                                                                      \
     }                                                                          \
 }
 
@@ -209,6 +276,7 @@ void checkFields
     const label loop_len = (f1).size();                                        \
                                                                                \
     /* pragmas... */                                                           \
+    _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)") \
     for (label i = 0; i < loop_len; ++i)                                       \
     {                                                                          \
         (f1P[i]) OP FUNC((f2P[i]), (f3P[i]));                                  \
@@ -253,6 +321,7 @@ void checkFields
     const label loop_len = (f1).size();                                        \
                                                                                \
     /* pragmas... */                                                           \
+    _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)") \
     for (label i = 0; i < loop_len; ++i)                                       \
     {                                                                          \
         (f1P[i]) OP FUNC((f2P[i]), (s));                                       \
@@ -261,6 +330,7 @@ void checkFields
 
 
 // [reduction] Binary Free Function : s1 OP FUNC(f, s2)
+// [TODO] - maybe create two separate definitions for min/max - will need to modify FieldFunctions.C
 
 #define TFOR_ALL_S_OP_FUNC_F_S(typeS1, s1, OP, FUNC, typeF, f, typeS2, s2)     \
 {                                                                              \
@@ -293,6 +363,7 @@ void checkFields
     const label loop_len = (f1).size();                                        \
                                                                                \
     /* pragmas... */                                                           \
+    _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)") \
     for (label i = 0; i < loop_len; ++i)                                       \
     {                                                                          \
         (f1P[i]) OP FUNC((s), (f2P[i]));                                       \
@@ -311,6 +382,7 @@ void checkFields
     const label loop_len = (f1).size();                                        \
                                                                                \
     /* pragmas... */                                                           \
+    _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)") \
     for (label i = 0; i < loop_len; ++i)                                       \
     {                                                                          \
         (f1P[i]) OP FUNC((s1), (s2));                                          \
@@ -333,6 +405,7 @@ void checkFields
     const label loop_len = (f1).size();                                        \
                                                                                \
     /* pragmas... */                                                           \
+    _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)") \
     for (label i = 0; i < loop_len; ++i)                                       \
     {                                                                          \
         (f1P[i]) OP (f2P[i]) FUNC((s));                                        \
@@ -360,6 +433,7 @@ void checkFields
     const label loop_len = (f1).size();                                        \
                                                                                \
     /* pragmas... */                                                           \
+    _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)") \
     for (label i = 0; i < loop_len; ++i)                                       \
     {                                                                          \
         (f1P[i]) OP FUNC((f2P[i]), (f3P[i]), (f4P[i]));                        \
@@ -383,6 +457,7 @@ void checkFields
     const label loop_len = (f1).size();                                        \
                                                                                \
     /* pragmas... */                                                           \
+    _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)") \
     for (label i = 0; i < loop_len; ++i)                                       \
     {                                                                          \
         (f1P[i]) OP FUNC((f2P[i]), (f3P[i]), (s4));                            \
@@ -407,10 +482,21 @@ void checkFields
     /* Loop: f1 OP1 f2 OP2 f3 */                                               \
     const label loop_len = (f1).size();                                        \
                                                                                \
-    /* pragmas... */                                                           \
-    for (label i = 0; i < loop_len; ++i)                                       \
+    if constexpr(!(std::is_same<typeF2,complex>() && std::is_same<typeF3,complex>())\
+                ){                                                             \
+        /* pragmas... */                                                       \
+        _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)") \
+        for (label i = 0; i < loop_len; ++i)                                   \
+        {                                                                      \
+            (f1P[i]) OP1 (f2P[i]) OP2 (f3P[i]);                                \
+        }                                                                      \
+    }                                                                          \
+    else                                                                       \
     {                                                                          \
-        (f1P[i]) OP1 (f2P[i]) OP2 (f3P[i]);                                    \
+        for (label i = 0; i < loop_len; ++i)                                   \
+        {                                                                      \
+            (f1P[i]) OP1 (f2P[i]) OP2 (f3P[i]);                                \
+        }                                                                      \
     }                                                                          \
 }
 
@@ -429,10 +515,22 @@ void checkFields
     /* Loop: f1 OP1 s OP2 f2 */                                                \
     const label loop_len = (f1).size();                                        \
                                                                                \
-    /* pragmas... */                                                           \
-    for (label i = 0; i < loop_len; ++i)                                       \
+    if constexpr(!(std::is_same<typeS,complex>() && std::is_same<typeF2,complex>())\
+                ){                                                             \
+        /* pragmas... */                                                       \
+        _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)") \
+        for (label i = 0; i < loop_len; ++i)                                   \
+        {                                                                      \
+            (f1P[i]) OP1 (s) OP2 (f2P[i]);                                     \
+        }                                                                      \
+    }                                                                          \
+    else                                                                       \
     {                                                                          \
-        (f1P[i]) OP1 (s) OP2 (f2P[i]);                                         \
+        /* pragmas... */                                                       \
+        for (label i = 0; i < loop_len; ++i)                                   \
+        {                                                                      \
+            (f1P[i]) OP1 (s) OP2 (f2P[i]);                                     \
+        }                                                                      \
     }                                                                          \
 }
 
@@ -451,10 +549,22 @@ void checkFields
     /* Loop f1 OP1 s OP2 f2 */                                                 \
     const label loop_len = (f1).size();                                        \
                                                                                \
-    /* pragmas... */                                                           \
-    for (label i = 0; i < loop_len; ++i)                                       \
+    if constexpr(!(std::is_same<typeF2,complex>() && std::is_same<typeS,complex>())\
+                ){                                                             \
+        /* pragmas... */                                                       \
+        _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)")\
+        for (label i = 0; i < loop_len; ++i)                                   \
+        {                                                                      \
+            (f1P[i]) OP1 (f2P[i]) OP2 (s);                                     \
+        }                                                                      \
+    }                                                                          \
+    else                                                                       \
     {                                                                          \
-        (f1P[i]) OP1 (f2P[i]) OP2 (s);                                         \
+        /* pragmas... */                                                       \
+        for (label i = 0; i < loop_len; ++i)                                   \
+        {                                                                      \
+            (f1P[i]) OP1 (f2P[i]) OP2 (s);                                     \
+        }                                                                      \
     }                                                                          \
 }
 
@@ -474,6 +584,7 @@ void checkFields
     const label loop_len = (f1).size();                                        \
                                                                                \
     /* pragmas... */                                                           \
+    _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)")\
     for (label i = 0; i < loop_len; ++i)                                       \
     {                                                                          \
         (f1P[i]) OP (f2P[i]);                                                  \
@@ -495,10 +606,23 @@ void checkFields
     /* Loop: f1 OP1 OP2 f2 */                                                  \
     const label loop_len = (f1).size();                                        \
                                                                                \
-    /* pragmas... */                                                           \
-    for (label i = 0; i < loop_len; ++i)                                       \
+    if constexpr((std::is_same<typeF1,Vector<scalar>>() && std::is_same<typeF2,Vector<scalar>>())||\
+                 (std::is_same<typeF1,scalar>() && std::is_same<typeF2,scalar>())\
+                ){                                                             \
+        /* pragmas... */                                                       \
+        _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)")\
+        for (label i = 0; i < loop_len; ++i)                                   \
+        {                                                                      \
+            (f1P[i]) OP1 OP2 (f2P[i]);                                         \
+        }                                                                      \
+    }                                                                          \
+    else                                                                       \
     {                                                                          \
-        (f1P[i]) OP1 OP2 (f2P[i]);                                             \
+        /* pragmas... */                                                       \
+        for (label i = 0; i < loop_len; ++i)                                   \
+        {                                                                      \
+            (f1P[i]) OP1 OP2 (f2P[i]);                                         \
+        }                                                                      \
     }                                                                          \
 }
 
@@ -514,6 +638,7 @@ void checkFields
     const label loop_len = (f).size();                                         \
                                                                                \
     /* pragmas... */                                                           \
+    _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)")\
     for (label i = 0; i < loop_len; ++i)                                       \
     {                                                                          \
         (fP[i]) OP (s);                                                        \
@@ -534,6 +659,7 @@ void checkFields
     const label loop_len = (f).size();                                         \
                                                                                \
     /* pragmas, reduction... */                                                \
+    _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)")\
     for (label i = 0; i < loop_len; ++i)                                       \
     {                                                                          \
         (s) OP (fP[i]);                                                        \
@@ -568,14 +694,16 @@ void checkFields
                                                                                \
     /* Loop: s OP FUNC(f) */                                                   \
     const label loop_len = (f).size();                                         \
+    typeS sum = (s);                                                           \
                                                                                \
     /* pragmas, reduction... */                                                \
+    _Pragma("omp target teams distribute parallel for reduction(+:sum) if(target:loop_len>10000)")\
     for (label i = 0; i < loop_len; ++i)                                       \
     {                                                                          \
-        (s) OP FUNC(fP[i]);                                                    \
+        sum OP FUNC(fP[i]);                                                    \
     }                                                                          \
+    (s) OP sum;                                                                \
 }
-
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 

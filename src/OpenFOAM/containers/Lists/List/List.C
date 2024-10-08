@@ -52,19 +52,46 @@ void Foam::List<T>::doResize(const label len)
             // Recover overlapping content when resizing
             T* old = this->v_;
             this->size_ = len;
+        
+        #ifdef USE_MEMORY_POOL
+            size_t bytes_needed = sizeof(T) * len;
+            size_t alignement = (bytes_needed > 2*100) ? 256 : 16;
+            if (len >= 5000)
+            {
+                void *tmp_ptr = provide_umpire_pool(bytes_needed);
+                this->v_ = new (tmp_ptr) T[len]; 
+            }
+            else
+            {
+                this->v_ = new (std::align_val_t(alignement)) T[len];
+            }
+        #else
             this->v_ = new T[len];
+        #endif
 
             // Can dispatch with
             // - std::execution::parallel_unsequenced_policy
             // - std::execution::unsequenced_policy
             std::move(old, (old + overlap), this->v_);
 
+        #ifdef USE_MEMORY_POOL
+            bool pool_ptr = is_umpire_pool_ptr(reinterpret_cast<void*>(old));
+            if (pool_ptr)
+            {
+                free_umpire_pool(reinterpret_cast<void*>(old));
+            }
+            else
+            {
+                delete[] old;
+            }
+        #else
             delete[] old;
+        #endif
         }
         else
         {
             // No overlapping content
-            delete[] this->v_;
+            clear();
             this->size_ = len;
             this->v_ = new T[len];
         }
@@ -307,7 +334,19 @@ Foam::List<T>::List(DynamicList<T, SizeMin>&& list)
 template<class T>
 Foam::List<T>::~List()
 {
+#ifdef USE_MEMORY_POOL
+    bool pool_ptr = is_umpire_pool_ptr(reinterpret_cast<void*>(this->v_));
+    if (pool_ptr)
+    {
+        free_umpire_pool(reinterpret_cast<void*>(this->v_));
+    }
+    else
+    {
+        delete[] this->v_;
+    }
+#else
     delete[] this->v_;
+#endif
 }
 
 

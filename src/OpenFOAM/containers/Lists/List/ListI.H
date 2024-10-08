@@ -27,6 +27,12 @@ License
 
 \*---------------------------------------------------------------------------*/
 
+#ifdef USE_MEMORY_POOL
+    void *provide_umpire_pool(size_t N);
+    void free_umpire_pool(void * data);
+    bool is_umpire_pool_ptr(void *prt);
+#endif
+
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
 template<class T>
@@ -34,8 +40,22 @@ inline void Foam::List<T>::doAlloc()
 {
     if (this->size_ > 0)
     {
+    #ifdef USE_MEMORY_POOL
+        size_t bytes_needed = sizeof(T) * this->size_;
+        size_t alignement = (bytes_needed > 2*100) ? 256 : 16;
+        if (this->size_ >= 5000)
+        {
+            void *tmp_ptr = provide_umpire_pool(bytes_needed);
+            this->v_ = new (tmp_ptr) T[this->size_]; 
+        }
+        else
+        {
+            this->v_ = new (std::align_val_t(alignement)) T[this->size_];
+        }
+    #else
         // With sign-check to avoid spurious -Walloc-size-larger-than
         this->v_ = new T[this->size_];
+    #endif
     }
 }
 
@@ -188,7 +208,20 @@ inline void Foam::List<T>::clear()
 {
     if (this->v_)
     {
+    #ifdef USE_MEMORY_POOL
+        bool pool_ptr = is_umpire_pool_ptr(reinterpret_cast<void*>(this->v_));
+        
+        if (pool_ptr)
+        {
+            free_umpire_pool(reinterpret_cast<void*>(this->v_));
+        }
+        else
+        {
+            delete[] this->v_;
+        }
+    #else
         delete[] this->v_;
+    #endif
         this->v_ = nullptr;
     }
     this->size_ = 0;

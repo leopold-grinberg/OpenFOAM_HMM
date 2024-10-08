@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2019-2021 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -28,6 +29,12 @@ License
 
 #include "MatrixBlock.H"
 
+#ifdef USE_MEMORY_POOL
+    void *provide_umpire_pool(size_t N);
+    void free_umpire_pool(void * data);
+    bool is_umpire_pool_ptr(void *prt);
+#endif
+
 // * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * * //
 
 template<class Form, class Type>
@@ -37,8 +44,22 @@ inline void Foam::Matrix<Form, Type>::doAlloc()
 
     if (len > 0)
     {
+    #ifdef USE_MEMORY_POOL
+        size_t bytes_needed = sizeof(Type) * len;
+        size_t alignement = (bytes_needed > 2*100) ? 256 : 16;
+        if (len >= 5000)
+        {
+            void *tmp_ptr = provide_umpire_pool(bytes_needed);
+            v_ = new (tmp_ptr) Type[len];
+        }
+        else
+        {
+            v_ = new (std::align_val_t(alignement)) Type[len];
+        }
+    #else
         // With sign-check to avoid spurious -Walloc-size-larger-than
         v_ = new Type[len];
+    #endif
     }
 }
 

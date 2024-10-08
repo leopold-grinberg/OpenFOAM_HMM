@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2019-2022 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -244,7 +245,19 @@ inline Foam::Matrix<Form, Type>::Matrix
 template<class Form, class Type>
 Foam::Matrix<Form, Type>::~Matrix()
 {
+#ifdef USE_MEMORY_POOL
+    bool pool_ptr = is_umpire_pool_ptr(reinterpret_cast<void*>(v_));
+    if (pool_ptr)
+    {
+        free_umpire_pool(reinterpret_cast<void*>(v_));
+    }
+    else
+    {
+        delete[] v_;
+    }
+#else    
     delete[] v_;
+#endif
 }
 
 
@@ -255,7 +268,19 @@ void Foam::Matrix<Form, Type>::clear()
 {
     if (v_)
     {
+    #ifdef USE_MEMORY_POOL
+        bool pool_ptr = is_umpire_pool_ptr(reinterpret_cast<void*>(v_));
+        if (pool_ptr)
+        {
+            free_umpire_pool(reinterpret_cast<void*>(v_));
+        }
+        else
+        {
+            delete[] v_;
+        }
+    #else    
         delete[] v_;
+    #endif
         v_ = nullptr;
     }
 

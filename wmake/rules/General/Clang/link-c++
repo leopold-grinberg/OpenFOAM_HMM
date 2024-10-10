@@ -43,6 +43,8 @@ else
 
 endif
 
+LINKEXE	+= -L${ROCM4FOAM}/lib -lamdhip64 ${WM_PROJECT_DIR}/../ADD_UMPIRE/provide_umpire_pool.o -L${UMPIRE4FOAM}/lib -lumpire
+
 # ---------------
 # Link dummy stub to resolve libPstream symbols used by libOpenFOAM
 ifneq (,$(LINKEXE_STUB))

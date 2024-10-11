@@ -111,76 +111,51 @@ Foam::fv::cellLimitedGrad<Type, Limiter>::calcGrad
     Field<Type> minVsf(vsf.primitiveField());
 
 #ifdef USE_OMP
-    static label *offsets_neighbour_list = NULL;
+    static label *offsets = NULL;
     static label *neighbour_list = NULL;
-    static label *offsets_owner_list = NULL;
-    static label *owner_list = NULL;
-
+    
     if (neighbour_list == NULL){
-        offsets_neighbour_list = new label[maxVsf.size()+1];
-        offsets_owner_list     = new label[maxVsf.size()+1];
+        offsets = new label[maxVsf.size()+1];
         label *count = new label[maxVsf.size()];
 
-        for (label i = 0; i < maxVsf.size(); ++i ) count[i] = 0;
+        for (label i = 0; i < maxVsf.size(); ++i ) { count[i] = 0; }
 
         //count neighbours for each owner
-        for (label facei=0; facei < owner.size(); ++facei){
+        for (label facei=0; facei < owner.size(); ++facei)
+        {
             const label own = owner[facei];
             count[own]++;
         }
 
-        offsets_neighbour_list[0] = 0;
-        for (label i = 0; i < maxVsf.size(); ++i ){
-            offsets_neighbour_list[i+1] = offsets_neighbour_list[i]+count[i];
+        offsets[0] = 0;
+        for (label i = 0; i < maxVsf.size(); ++i )
+        {
+            offsets[i+1] = offsets[i]+count[i];
         }
-        neighbour_list = new label[offsets_neighbour_list[maxVsf.size()]];
+        neighbour_list = new label[offsets[maxVsf.size()]];
 
         //list faces for each cell
-        for (label i = 0; i < maxVsf.size(); ++i ) count[i] = 0;
+        for (label i = 0; i < maxVsf.size(); ++i ) { count[i] = 0; }
 
         label *ptr_to_neighbour_list;
 
-        for (label facei=0; facei < owner.size(); ++facei){
+        for (label facei=0; facei < owner.size(); ++facei)
+        {
             const label own = owner[facei];
             const label nei = neighbour[facei];
-            ptr_to_neighbour_list = &neighbour_list[ offsets_neighbour_list[own] + count[own] ];
+            ptr_to_neighbour_list = &neighbour_list[offsets[own] + count[own]];
             ptr_to_neighbour_list[0] = nei;
             count[own]++;
         }
-
-        //create list of owners for each neighbour
-        for (label i = 0; i < maxVsf.size(); ++i ) count[i] = 0;
-
-        //count owners for each neighbour
-        for (label facei=0; facei < owner.size(); ++facei){
-            const label nei = neighbour[facei];
-            count[nei]++;
-        }
-        offsets_owner_list[0] = 0;
-        for (label i = 0; i < maxVsf.size(); ++i ){
-            offsets_owner_list[i+1] = offsets_owner_list[i]+count[i];
-        }
-        owner_list = new label[offsets_owner_list[maxVsf.size()]];
-        for (label i = 0; i < maxVsf.size(); ++i ) count[i] = 0;
-
-        label *ptr_to_owner_list;
-
-        for (label facei=0; facei < owner.size(); ++facei){
-            const label own = owner[facei];
-            const label nei = neighbour[facei];
-            ptr_to_owner_list = &owner_list[ offsets_owner_list[nei] + count[nei] ];
-            ptr_to_owner_list[0] = own;
-            count[nei]++;
-       }
-       delete[] count;
+        delete[] count;
     }
 
     label loop_len = maxVsf.size();
-    #pragma omp target teams distribute parallel for thread_limit(256) if(loop_len > 10000) 
+    #pragma omp target teams distribute parallel for if(loop_len > 10000) thread_limit(256)
     for (label celli = 0; celli < loop_len; celli+=1)
     {
-        const label *ptr_to_neighbour_list = &neighbour_list[offsets_neighbour_list[celli]];
-        const label nFaces = offsets_neighbour_list[celli+1] - offsets_neighbour_list[celli];
+        const label *ptr_to_neighbour_list = &neighbour_list[offsets[celli]];
+        const label nFaces = offsets[celli+1] - offsets[celli];
 
         /*Foam::Vector<scalar>*/ Type maxVsf_celli = maxVsf[celli];
         /*Foam::Vector<scalar>*/ Type minVsf_celli = minVsf[celli];
@@ -194,23 +169,39 @@ Foam::fv::cellLimitedGrad<Type, Limiter>::calcGrad
         minVsf[celli] = minVsf_celli;
     }
 
-    #pragma omp target teams distribute parallel for thread_limit(256) if(loop_len > 10000) 
-    for (label celli = 0; celli < loop_len; celli+=1)
+    #pragma omp target teams distribute parallel for if(owner.size() > 10000) thread_limit(256)
+    for (label facei = 0; facei < owner.size(); facei += 2)
     {
-
-        const label *ptr_to_owner_list = &owner_list[offsets_owner_list[celli]];
-        const label nFaces = offsets_owner_list[celli+1] - offsets_owner_list[celli];
-
-        /* Foam::Vector<scalar> */ Type maxVsf_celli = maxVsf[celli];
-        /* Foam::Vector<scalar> */ Type minVsf_celli = minVsf[celli];
+        const label nf = (owner.size() - facei) > 1 ? 2 : 1;
         #pragma unroll 2
-        for ( label f = 0; f < nFaces; ++f){
-            label own = ptr_to_owner_list[f];
-            maxVsf_celli = Foam::max(maxVsf_celli, vsf[own]);
-            minVsf_celli = Foam::min(minVsf_celli, vsf[own]);
+        for ( label i = 0; i < nf; ++i)
+        {
+            const label own = owner[facei+i];
+            const label nei = neighbour[facei+i];
+        
+            const Type& vsfOwn = vsf[own];
+            const Type& vsfNei = vsf[nei];
+
+            //maxVsf[nei] = Foam::max(maxVsf[nei], vsfOwn);
+            for (direction cmpt = 0; 
+                cmpt < pTraits<Foam::Vector<scalar>>::nComponents; 
+                ++cmpt)
+            {
+                scalar& var = setComponent(maxVsf[nei],cmpt);
+                #pragma omp atomic compare
+                if (var < (scalar) component(vsfOwn,cmpt)) var = (scalar) component(vsfOwn,cmpt);
+            }
+
+            //minVsf[nei] = Foam::min(minVsf[nei], vsfOwn);
+            for (direction cmpt = 0; 
+                cmpt < pTraits<Foam::Vector<scalar>>::nComponents; 
+                ++cmpt)
+            {
+                scalar& var = setComponent(minVsf[nei],cmpt);
+                #pragma omp atomic compare
+                if (var > (scalar) component(vsfOwn,cmpt)) var = (scalar) component(vsfOwn,cmpt);
+            }
         }
-        maxVsf[celli] = maxVsf_celli;
-        minVsf[celli] = minVsf_celli;
     }
 
     const auto& bsf = vsf.boundaryField();
@@ -230,7 +221,9 @@ Foam::fv::cellLimitedGrad<Type, Limiter>::calcGrad
                 const label own = pOwner[pFacei];
                 const Type& vsfNei = psfNei[pFacei];
 
-                for (direction cmpt = 0; cmpt < pTraits<Foam::Vector<scalar>>::nComponents; ++cmpt)
+                for (direction cmpt = 0; 
+                    cmpt < pTraits<Foam::Vector<scalar>>::nComponents; 
+                    ++cmpt)
                 {
                     scalar& maxVar = setComponent(maxVsf[own],cmpt);
                     scalar& minVar = setComponent(minVsf[own],cmpt);
@@ -250,7 +243,9 @@ Foam::fv::cellLimitedGrad<Type, Limiter>::calcGrad
                 const label own = pOwner[pFacei];
                 const Type& vsfNei = psf[pFacei];
 
-                for (direction cmpt = 0; cmpt < pTraits<Foam::Vector<scalar>>::nComponents; ++cmpt)
+                for (direction cmpt = 0; 
+                    cmpt < pTraits<Foam::Vector<scalar>>::nComponents; 
+                    ++cmpt)
                 {
                     scalar& maxVar = setComponent(maxVsf[own],cmpt);
                     scalar& minVar = setComponent(minVsf[own],cmpt);

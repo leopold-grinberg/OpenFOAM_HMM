@@ -91,71 +91,17 @@ Foam::fv::gaussGrad<Type>::gradf
     const Field<Type>& issf = ssf;
 
 #ifdef USE_OMP
-    static label *offsets = NULL;
-    static label *face_list = NULL;
-    static label *face_sign = NULL;
-
-    if (face_list == NULL){
-       offsets = new label[igGrad.size()+1];
-       label *count = new label[igGrad.size()];
-
-       for (label i = 0; i < igGrad.size(); ++i ) count[i] = 0;
-
-       for (label facei=0; facei < owner.size(); ++facei)
-       {
-        const label own = owner[facei];
-        const label nei = neighbour[facei];
-        count[own]++;
-        count[nei]++;
-       }
-
-       offsets[0] = 0;
-       for (label i = 0; i < igGrad.size(); ++i ){
-         offsets[i+1] = offsets[i]+count[i];
-       }
-       face_list = new label[offsets[igGrad.size()]];
-       face_sign = new label[offsets[igGrad.size()]];
-
-       //list faces for each cell
-       for (label i = 0; i < igGrad.size(); ++i ) count[i] = 0;
-
-       label *ptr_to_face_list, *ptr_to_face_sign;
-
-       for (label facei=0; facei < owner.size(); ++facei){
-
-        const label own = owner[facei];
-        const label nei = neighbour[facei];
-
-        /* face_list  has pairs [own] [nei]   this can be used to determine a sign
-         * for accumulating Sfssf   */
-        ptr_to_face_list = &face_list[ offsets[own] + count[own] ];
-        ptr_to_face_sign = &face_sign[ offsets[own] + count[own] ];
-        ptr_to_face_list[0] = facei;
-        ptr_to_face_sign[0] = 1.0;
-        count[own]++;
-
-        ptr_to_face_list = &face_list[ offsets[nei] + count[nei] ];
-        ptr_to_face_sign = &face_sign[ offsets[nei] + count[nei] ];
-        ptr_to_face_list[0] = facei;
-        ptr_to_face_sign[0] = -1.0;
-        count[nei]++;
-       }
-       delete[] count;
-    }
-    
-    const label nCells = igGrad.size();
-    #pragma omp target teams distribute parallel for thread_limit(256) if(nCells>10000 )
-    for (label celli = 0; celli < nCells; ++celli){
-
-        const label *ptr_to_face_list = &face_list[offsets[celli]];
-        const label *ptr_to_face_sign = &face_sign[offsets[celli]];
-        const label nFaces = offsets[celli+1] - offsets[celli];
-
+    #pragma omp target teams distribute parallel for if (target:owner.size()>10000) thread_limit(256)
+    for (label facei=0; facei<owner.size(); facei+=2)
+    {
+        const label nf = (owner.size() - facei) > 1 ? 2 : 1;
         #pragma unroll 2
-        for ( label f = 0; f < nFaces; ++f){
-           const label facei = ptr_to_face_list[f];
-           const GradType Sfssf = Sf[facei]*issf[facei]*ptr_to_face_sign[f];
-           igGrad[celli] += Sfssf;
+        for (label i=0; i<nf; i++)
+        {
+            const GradType Sfssf = Sf[facei+i]*issf[facei+i];
+
+            atomicAccumulator(igGrad[owner[facei+i]]) += Sfssf;
+            atomicAccumulator(igGrad[neighbour[facei+i]]) -= Sfssf;
         }
     }
     

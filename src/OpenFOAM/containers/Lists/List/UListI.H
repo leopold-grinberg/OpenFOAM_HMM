@@ -55,7 +55,7 @@ template<class T>
 inline void Foam::UList<T>::fill_uniform(const T& val)
 {
 #ifdef USE_OMP
-    if constexpr( std::is_same<T,scalar>() || std::is_same<T,int>() || std::is_same<T,unsigned int>() || 
+    if constexpr( std::is_same<T,scalar>() || std::is_same<T,label>() || 
                   std::is_same<T,Foam::Vector<scalar>>() || std::is_same<T,Foam::Tensor<scalar>>()
                 )
     {
@@ -103,7 +103,7 @@ inline void Foam::UList<T>::fill_uniform(const Foam::zero)
     if (is_contiguous<T>::value)
     {
     #ifdef USE_OMP
-        if constexpr( std::is_same<T,scalar>() || std::is_same<T,int>() || std::is_same<T,unsigned int>() || 
+        if constexpr( std::is_same<T,scalar>() || std::is_same<T,label>() || 
                       std::is_same<T,Foam::Vector<scalar>>() || std::is_same<T,Foam::Tensor<scalar>>()
                     )
         {

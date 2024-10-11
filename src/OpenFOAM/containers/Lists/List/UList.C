@@ -115,7 +115,7 @@ void Foam::UList<T>::deepCopy(const UList<T>& list)
     else if (this->size_ > 0)
     {
     #ifdef USE_OMP
-        if constexpr( std::is_same<T,scalar>() || std::is_same<T,int>() || std::is_same<T,unsigned int>() || 
+        if constexpr( std::is_same<T,scalar>() || std::is_same<T,label>() || 
                       std::is_same<T,Foam::Vector<scalar>>() || std::is_same<T,Foam::Tensor<scalar>>()
                     )
         {
@@ -168,7 +168,7 @@ void Foam::UList<T>::deepCopy(const IndirectListBase<T, Addr>& list)
         auto iter = this->v_;
     
     #ifdef USE_OMP
-        if constexpr( std::is_same<T,scalar>() || std::is_same<T,int>() || std::is_same<T,unsigned int>() || 
+        if constexpr( std::is_same<T,scalar>() || std::is_same<T,label>() || 
                       std::is_same<T,Foam::Vector<scalar>>() || std::is_same<T,Foam::Tensor<scalar>>()
                     )
         {

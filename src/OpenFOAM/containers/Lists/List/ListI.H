@@ -33,6 +33,14 @@ License
     bool is_umpire_pool_ptr(void *prt);
 #endif
 
+#ifdef USE_OMP
+#include <omp.h>
+    #ifndef OMP_UNIFIED_MEMORY_REQUIRED
+    #define OMP_UNIFIED_MEMORY_REQUIRED
+    #pragma omp requires unified_shared_memory
+    #endif
+#endif
+
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
 template<class T>
@@ -84,7 +92,7 @@ inline void Foam::List<T>::copyList(const ListType& list)
     auto iter = this->v_;
 
 #ifdef USE_OMP
-    if constexpr( std::is_same<T,scalar>() || std::is_same<T,int>() || std::is_same<T,unsigned int>() || 
+    if constexpr( std::is_same<T,scalar>() || std::is_same<T,label>() || 
                   std::is_same<T,Foam::Vector<scalar>>() || std::is_same<T,Foam::Tensor<scalar>>()
                 )
     {
@@ -127,7 +135,7 @@ inline void Foam::List<T>::copyList
     auto iter = this->v_;
 
 #ifdef USE_OMP
-    if constexpr( std::is_same<T,scalar>() || std::is_same<T,int>() || std::is_same<T,unsigned int>() || 
+    if constexpr( std::is_same<T,scalar>() || std::is_same<T,label>() || 
                   std::is_same<T,Foam::Vector<scalar>>() || std::is_same<T,Foam::Tensor<scalar>>()
                 )
     {

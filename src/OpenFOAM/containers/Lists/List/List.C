@@ -362,7 +362,7 @@ void Foam::List<T>::resize(const label len, const T& val)
     if (oldLen < this->size_)
     {
     #ifdef USE_OMP
-        if constexpr ( std::is_same<T,scalar>() || std::is_same<T,int>() || std::is_same<T,unsigned int>() || std::is_same<T,Foam::Vector<scalar>>() )
+        if constexpr (std::is_same<T,scalar>() || std::is_same<T,label>() || std::is_same<T,Foam::Vector<scalar>>())
         {
             T * __restrict__ vp_ptr = this->begin();
             #pragma omp target teams distribute parallel for if (target:(len-oldLen) > 10000)

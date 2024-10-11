@@ -63,14 +63,19 @@ Foam::tmp<Foam::Field<Type>> Foam::lduMatrix::H(const Field<Type>& psi) const
         const label nFaces = upper().size();
 
     #ifdef USE_OMP
-        #pragma omp target teams distribute parallel for thread_limit(64) if (target:nFaces>10000)
-        for (label face=0; face<nFaces; face++)
+        #pragma omp target teams distribute parallel for if (target:nFaces>10000) thread_limit(256) 
+        for (label face=0; face<nFaces; face+=2)
         {
-            const label lptr = lPtr[face];
-            const label uptr = uPtr[face];
+            const label nf = (nFaces - face) > 1 ? 2 : 1;
+            #pragma unroll 2
+            for (label i=0; i<nf; ++i)
+            {
+                const label lptr = lPtr[face+i];
+                const label uptr = uPtr[face+i];
 
-            atomicAccumulator(HpsiPtr[uptr]) -= lowerPtr[face]*psiPtr[lptr];
-            atomicAccumulator(HpsiPtr[lptr]) -= upperPtr[face]*psiPtr[uptr];
+                atomicAccumulator(HpsiPtr[uptr]) -= lowerPtr[face+i]*psiPtr[lptr];
+                atomicAccumulator(HpsiPtr[lptr]) -= upperPtr[face+i]*psiPtr[uptr];
+            }
         }
     #else
         for (label face=0; face<nFaces; face++)

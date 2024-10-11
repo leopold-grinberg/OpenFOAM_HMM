@@ -54,11 +54,16 @@ void Foam::lduMatrix::sumDiag()
     const labelUList& u = lduAddr().upperAddr();
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:l.size()>10000)
-    for (label face=0; face<l.size(); face++)
+    #pragma omp target teams distribute parallel for if (target:l.size()>10000) thread_limit(256)
+    for (label face=0; face<l.size(); face+=2)
     {
-        atomicAccumulator(Diag[l[face]]) += Lower[face];
-        atomicAccumulator(Diag[u[face]]) += Upper[face];
+        const label nf = (l.size()-face) > 1 ? 2 : 1;
+        #pragma unroll 2
+        for (label i=0; i<nf; i++)
+        {
+            atomicAccumulator(Diag[l[face+i]]) += Lower[face+i];
+            atomicAccumulator(Diag[u[face+i]]) += Upper[face+i];
+        }
     }
 #else
     for (label face=0; face<l.size(); face++)
@@ -80,11 +85,16 @@ void Foam::lduMatrix::negSumDiag()
     const labelUList& u = lduAddr().upperAddr();
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:l.size()>10000)
-    for (label face=0; face<l.size(); face++)
+    #pragma omp target teams distribute parallel for if (target:l.size()>10000) thread_limit(256)
+    for (label face=0; face<l.size(); face+=2)
     {
-        atomicAccumulator(Diag[l[face]]) -= Lower[face];
-        atomicAccumulator(Diag[u[face]]) -= Upper[face];
+        const label nf = (l.size()-face) > 1 ? 2 : 1;
+        #pragma unroll 2
+        for (label i=0; i<nf; i++)
+        {
+            atomicAccumulator(Diag[l[face+i]]) -= Lower[face+i];
+            atomicAccumulator(Diag[u[face+i]]) -= Upper[face+i];
+        }
     }
 #else
     for (label face=0; face<l.size(); face++)
@@ -108,11 +118,16 @@ void Foam::lduMatrix::sumMagOffDiag
     const labelUList& u = lduAddr().upperAddr();
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:l.size()>10000)
-    for (label face = 0; face < l.size(); face++)
+    #pragma omp target teams distribute parallel for if (target:l.size()>10000) thread_limit(256)
+    for (label face = 0; face < l.size(); face+=2)
     {
-        atomicAccumulator(sumOff[u[face]]) += mag(Lower[face]);
-        atomicAccumulator(sumOff[l[face]]) += mag(Upper[face]);
+        const label nf = (l.size()-face) > 1 ? 2 : 1;
+        #pragma unroll 2
+        for (label i=0; i<nf; i++)
+        {
+            atomicAccumulator(sumOff[u[face+i]]) += mag(Lower[face+i]);
+            atomicAccumulator(sumOff[l[face+i]]) += mag(Upper[face+i]);
+        }
     }
 #else
     for (label face = 0; face < l.size(); face++)

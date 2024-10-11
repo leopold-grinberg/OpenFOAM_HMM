@@ -38,6 +38,8 @@ License
     #define OMP_UNIFIED_MEMORY_REQUIRED
     #pragma omp requires unified_shared_memory
     #endif
+
+#include "AtomicAccumulator.H"
 #endif
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
@@ -73,8 +75,19 @@ Foam::DICSmoother::DICSmoother
     rD_(matrix_.diag().size())
 {
     const scalarField& diag = matrix_.diag();
-    std::copy(diag.begin(), diag.end(), rD_.begin());
+#ifdef USE_OMP
+    const label loop_len = diag.size();
+    const solveScalar* __restrict__ diagPtr = diag.begin();
+    solveScalar* __restrict__ rD_Ptr = rD_.begin();
 
+    #pragma omp target teams distribute parallel for if (target:loop_len>20000)
+    for (label i = 0; i < loop_len; ++i)
+    {
+        rD_Ptr[i] = diagPtr[i];
+    }    
+#else
+    std::copy(diag.begin(), diag.end(), rD_.begin());
+#endif
     DICPreconditioner::calcReciprocalD(rD_, matrix_);
 }
 
@@ -113,28 +126,50 @@ void Foam::DICSmoother::smooth
         );
 
         const label nCells = rA.size();
+        const label nFaces = matrix_.upper().size();
+        const label nFacesM1 = nFaces - 1;
     #ifdef USE_OMP
+        solveScalarField rA_temp(rA.size());
+        solveScalar* __restrict__ rA_temp_Ptr = rA_temp.begin();
+
         #pragma omp target teams distribute parallel for if (target:nCells>20000)
-    #endif
+        for (label cell=0; cell<nCells; cell++)
+        {
+            rAPtr[cell] *= rDPtr[cell];
+            rA_temp_Ptr[cell] = rAPtr[cell];
+        }
+    
+        #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+        for (label facei=0; facei<nFaces; facei++)
+        {
+            const label u = uPtr[facei];
+            atomicAccumulator(rA_temp_Ptr[u]) -= rDPtr[u]*upperPtr[facei]*rAPtr[lPtr[facei]];
+        }
+
+        #pragma omp target teams distribute parallel for if (target:nFacesM1>10000)
+        for (label facei=nFacesM1; facei>=0; facei--)
+        {
+            const label l = lPtr[facei];
+            atomicAccumulator(rAPtr[l]) -= rDPtr[l]*upperPtr[facei]*rA_temp_Ptr[uPtr[facei]];
+        }
+    #else
         for (label cell=0; cell<nCells; cell++)
         {
             rAPtr[cell] *= rDPtr[cell];
         }
     
-        const label nFaces = matrix_.upper().size();
         for (label facei=0; facei<nFaces; facei++)
         {
             const label u = uPtr[facei];
             rAPtr[u] -= rDPtr[u]*upperPtr[facei]*rAPtr[lPtr[facei]];
         }
 
-        const label nFacesM1 = nFaces - 1;
         for (label facei=nFacesM1; facei>=0; facei--)
         {
             const label l = lPtr[facei];
             rAPtr[l] -= rDPtr[l]*upperPtr[facei]*rAPtr[uPtr[facei]];
         }
-
+    #endif
         psi += rA;
     }
 }

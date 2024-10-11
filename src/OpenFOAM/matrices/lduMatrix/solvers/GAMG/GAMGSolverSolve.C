@@ -9,6 +9,7 @@
     Copyright (C) 2016-2021,2023 OpenCFD Ltd.
     Copyright (C) 2023 Huawei (Yu Ankun)
     Copyright (C) 2023 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -31,6 +32,16 @@ License
 #include "GAMGSolver.H"
 #include "SubField.H"
 #include "PrecisionAdaptor.H"
+
+#ifdef USE_OMP
+#include <omp.h>
+    #ifndef OMP_UNIFIED_MEMORY_REQUIRED
+    #define OMP_UNIFIED_MEMORY_REQUIRED
+    #pragma omp requires unified_shared_memory
+    #endif
+
+#include "AtomicAccumulator.H"
+#endif
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
@@ -449,7 +460,10 @@ void Foam::GAMGSolver::Vcycle
         );
     }
 
-    forAll(psi, i)
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (target:psi.size()>20000)
+#endif
+    for (label i=0; i<psi.size(); i++)
     {
         psi[i] += finestCorrection[i];
     }

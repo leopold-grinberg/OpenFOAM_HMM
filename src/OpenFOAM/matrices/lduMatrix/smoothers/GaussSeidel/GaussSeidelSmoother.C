@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2015 OpenFOAM Foundation
     Copyright (C) 2017-2019 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -28,6 +29,16 @@ License
 
 #include "GaussSeidelSmoother.H"
 #include "PrecisionAdaptor.H"
+
+#ifdef USE_OMP
+#include <omp.h>
+    #ifndef OMP_UNIFIED_MEMORY_REQUIRED
+    #define OMP_UNIFIED_MEMORY_REQUIRED
+    #pragma omp requires unified_shared_memory
+    #endif
+
+#include "AtomicAccumulator.H"
+#endif
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -95,6 +106,9 @@ void Foam::GaussSeidelSmoother::smooth
     const label* const __restrict__ uPtr =
         matrix_.lduAddr().upperAddr().begin();
 
+    const label* const __restrict__ lPtr =
+        matrix_.lduAddr().lowerAddr().begin();
+
     const label* const __restrict__ ownStartPtr =
         matrix_.lduAddr().ownerStartAddr().begin();
 
@@ -141,7 +155,70 @@ void Foam::GaussSeidelSmoother::smooth
         solveScalar psii;
         label fStart;
         label fEnd = ownStartPtr[0];
+    
+    #ifdef USE_OMP
+        solveScalarField Z(psi.size());
+        solveScalarField R(psi.size());
 
+        solveScalar* __restrict__ rhsPtr = bPrime.begin();
+        solveScalar* __restrict__ rPtr = R.begin();
+        solveScalar* __restrict__ zPtr = Z.begin();
+
+        const label nFaces = matrix_.upper().size();
+
+        #pragma omp target teams distribute parallel for if (target:nCells>200000)
+        for (label celli=0; celli<nCells; celli++)
+        {
+            rPtr[celli] = diagPtr[celli]*psiPtr[celli];
+        }
+
+        #pragma omp target teams distribute parallel for if (target:nFaces>10000) thread_limit(256)
+        for (label face=0; face<nFaces; face+=2)
+        {
+            const label nf = (nFaces - face) > 1 ? 2 : 1;
+            #pragma unroll 2
+            for (label i=0; i<nf; i++)
+            {
+                const label l_val = lPtr[face+i];
+                const label u_val = uPtr[face+i];
+                atomicAccumulator(rPtr[u_val]) += lowerPtr[face+i]*psiPtr[l_val];
+                atomicAccumulator(rPtr[l_val]) += upperPtr[face+i]*psiPtr[u_val];
+            }
+        }
+
+        #pragma omp target teams distribute parallel for if (target:nCells>20000)
+        for (label celli=0; celli<nCells; celli++)
+        {
+            scalar r = rhsPtr[celli] - rPtr[celli];
+            zPtr[celli] = r/diagPtr[celli];
+            psiPtr[celli] += zPtr[celli];
+        }
+
+        scalar multiplier = -1.0;
+
+        #pragma omp target teams distribute parallel for if(target:nCells>20000)
+        for(label celli=0; celli<nCells; celli++)
+        {
+            fStart  = ownStartPtr[celli];
+            fEnd    = ownStartPtr[celli+1];
+
+            scalar tmp = 0.0;
+            #pragma unroll 4
+            for (label facei=fStart; facei<fEnd; facei++)
+            {
+                tmp += upperPtr[facei]*zPtr[uPtr[facei]];
+            }
+            
+            rPtr[celli] = tmp;
+        }
+
+        #pragma omp target teams distribute parallel for if (target:nCells>20000)
+        for (label celli=0; celli<nCells; celli++)
+        {
+            zPtr[celli] = rPtr[celli]/diagPtr[celli];
+            psiPtr[celli] += multiplier * zPtr[celli];
+        }
+    #else
         for (label celli=0; celli<nCells; celli++)
         {
             // Start and end of this row
@@ -168,6 +245,7 @@ void Foam::GaussSeidelSmoother::smooth
 
             psiPtr[celli] = psii;
         }
+    #endif    
     }
 }
 

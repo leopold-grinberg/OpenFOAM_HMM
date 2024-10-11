@@ -36,6 +36,8 @@ License
     #define OMP_UNIFIED_MEMORY_REQUIRED
     #pragma omp requires unified_shared_memory
     #endif
+
+#include "AtomicAccumulator.H"
 #endif
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
@@ -62,8 +64,19 @@ Foam::DILUPreconditioner::DILUPreconditioner
     rD_(sol.matrix().diag().size())
 {
     const scalarField& diag = sol.matrix().diag();
-    std::copy(diag.begin(), diag.end(), rD_.begin());
+#ifdef USE_OMP
+    const label loop_len = diag.size();
+    const solveScalar* __restrict__ diagPtr = diag.begin();
+    solveScalar* __restrict__ rD_Ptr = rD_.begin();
 
+    #pragma omp target teams distribute parallel for if (target:loop_len>20000)
+    for (label i = 0; i < loop_len; ++i)
+    {
+        rD_Ptr[i] = diagPtr[i];
+    }    
+#else
+    std::copy(diag.begin(), diag.end(), rD_.begin());
+#endif
     calcReciprocalD(rD_, sol.matrix());
 }
 
@@ -84,23 +97,43 @@ void Foam::DILUPreconditioner::calcReciprocalD
     const scalar* const __restrict__ upperPtr = matrix.upper().begin();
     const scalar* const __restrict__ lowerPtr = matrix.lower().begin();
 
-    label nFaces = matrix.upper().size();
+    const label nFaces = matrix.upper().size();
+    const label nCells = rD.size();
+#ifdef USE_OMP
+    solveScalarField rD_temp(rD.size());
+    solveScalar* __restrict__ rD_temp_Ptr = rD_temp.begin();
+
+    #pragma omp target teams distribute parallel for if (target:nCells>20000)
+    for (label cell=0; cell<nCells; cell++)
+    {
+        rD_temp_Ptr[cell] = 0.0;
+    }
+    // Calculate the sum[cell] += U[cell][j]*L[j][cell]/D[j]
+    #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+    for (label face=0; face<nFaces; face++)
+    {
+        atomicAccumulator(rD_temp_Ptr[uPtr[face]]) += upperPtr[face]*lowerPtr[face]/rDPtr[lPtr[face]];
+    }
+
+    // Calculate the reciprocal of the preconditioned diagonal
+    // inv_D [cell] = 1/(D[cell] - sum[cell])
+    #pragma omp target teams distribute parallel for if (target:nCells>20000)
+    for (label cell=0; cell<nCells; cell++)
+    {
+        rDPtr[cell] = 1.0/(rDPtr[cell] - rD_temp_Ptr[cell]);
+    }
+#else
     for (label face=0; face<nFaces; face++)
     {
         rDPtr[uPtr[face]] -= upperPtr[face]*lowerPtr[face]/rDPtr[lPtr[face]];
     }
 
-
     // Calculate the reciprocal of the preconditioned diagonal
-    const label nCells = rD.size();
-
-#ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:nCells>20000)
-#endif
     for (label cell=0; cell<nCells; cell++)
     {
         rDPtr[cell] = 1.0/rDPtr[cell];
     }
+#endif
 }
 
 
@@ -132,8 +165,32 @@ void Foam::DILUPreconditioner::precondition
     const label nFacesM1 = nFaces - 1;
 
 #ifdef USE_OMP
+    solveScalarField wA_temp(wA.size());
+    solveScalar* __restrict__ wA_temp_Ptr = wA_temp.begin();
+
     #pragma omp target teams distribute parallel for if (target:nCells>20000)
-#endif
+    for (label cell=0; cell<nCells; cell++)
+    {
+        wAPtr[cell] = rDPtr[cell]*rAPtr[cell];
+        wA_temp_Ptr[cell] = wAPtr[cell];
+    }
+
+    #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+    for (label face=0; face<nFaces; face++)
+    {
+        const label sface = losortPtr[face];
+        atomicAccumulator(wA_temp_Ptr[uPtr[sface]]) -=
+            rDPtr[uPtr[sface]]*lowerPtr[sface]*wAPtr[lPtr[sface]];
+    }
+
+    #pragma omp target teams distribute parallel for if (target:nFacesM1>10000)
+    for (label face=nFacesM1; face>=0; face--)
+    {
+        const label lptr_index = lPtr[face];
+        atomicAccumulator(wAPtr[lptr_index]) -=
+            rDPtr[lptr_index]*upperPtr[face]*wA_temp_Ptr[uPtr[face]];
+    }
+#else
     for (label cell=0; cell<nCells; cell++)
     {
         wAPtr[cell] = rDPtr[cell]*rAPtr[cell];
@@ -151,6 +208,7 @@ void Foam::DILUPreconditioner::precondition
         wAPtr[lPtr[face]] -=
             rDPtr[lPtr[face]]*upperPtr[face]*wAPtr[uPtr[face]];
     }
+#endif
 }
 
 
@@ -182,8 +240,31 @@ void Foam::DILUPreconditioner::preconditionT
     const label nFacesM1 = nFaces - 1;
 
 #ifdef USE_OMP
+    solveScalarField wT_temp(wT.size());
+    solveScalar* __restrict__ wT_temp_Ptr = wT_temp.begin();
+    
     #pragma omp target teams distribute parallel for if (target:nCells>20000)
-#endif
+    for (label cell=0; cell<nCells; cell++)
+    {
+        wTPtr[cell] = rDPtr[cell]*rTPtr[cell];
+        wT_temp_Ptr[cell] = wTPtr[cell];
+    }
+
+    #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+    for (label face=0; face<nFaces; face++)
+    {
+        atomicAccumulator(wT_temp_Ptr[uPtr[face]]) -=
+            rDPtr[uPtr[face]]*upperPtr[face]*wTPtr[lPtr[face]];
+    }
+
+    #pragma omp target teams distribute parallel for if (target:nFacesM1>10000)
+    for (label face=nFacesM1; face>=0; face--)
+    {
+        const label sface = losortPtr[face];
+        atomicAccumulator(wTPtr[lPtr[sface]]) -=
+            rDPtr[lPtr[sface]]*lowerPtr[sface]*wT_temp_Ptr[uPtr[sface]];
+    }
+#else
     for (label cell=0; cell<nCells; cell++)
     {
         wTPtr[cell] = rDPtr[cell]*rTPtr[cell];
@@ -202,6 +283,7 @@ void Foam::DILUPreconditioner::preconditionT
         wTPtr[lPtr[sface]] -=
             rDPtr[lPtr[sface]]*lowerPtr[sface]*wTPtr[uPtr[sface]];
     }
+#endif
 }
 
 

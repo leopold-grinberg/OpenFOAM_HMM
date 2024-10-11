@@ -37,6 +37,8 @@ License
     #define OMP_UNIFIED_MEMORY_REQUIRED
     #pragma omp requires unified_shared_memory
     #endif
+
+#include "AtomicAccumulator.H"
 #endif
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
@@ -87,10 +89,24 @@ Foam::FDICSmoother::FDICSmoother
     const label nFaces = matrix_.upper().size();
 
     const scalarField& diag = matrix_.diag();
-    std::copy(diag.begin(), diag.end(), rD_.begin());
+#ifdef USE_OMP
+    const label loop_len = diag.size();
+    const solveScalar* __restrict__ diagPtr = diag.begin();
+    solveScalar* __restrict__ rD_Ptr = rD_.begin();
 
+    #pragma omp target teams distribute parallel for if (target:loop_len>20000)
+    for (label i = 0; i < loop_len; ++i)
+    {
+        rD_Ptr[i] = diagPtr[i];
+    }    
+#else
+    std::copy(diag.begin(), diag.end(), rD_.begin());
+#endif
     DICPreconditioner::calcReciprocalD(rD_, matrix_);
 
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+#endif
     for (label face=0; face<nFaces; face++)
     {
         rDuUpperPtr[face] = rDPtr[uPtr[face]]*upperPtr[face];
@@ -135,26 +151,46 @@ void Foam::FDICSmoother::smooth
         );
 
         const label nCells = rA.size();
-#ifdef USE_OMP
+        const label nFaces = matrix_.upper().size();
+        const label nFacesM1 = nFaces - 1;
+    #ifdef USE_OMP
+        solveScalarField rA_temp(rA.size());
+        solveScalar* __restrict__ rA_temp_Ptr = rA_temp.begin();
+
         #pragma omp target teams distribute parallel for if (target:nCells>20000)
-    #endif
+        for(label cell=0; cell<nCells; cell++)
+        {
+            rAPtr[cell] *= rDPtr[cell];
+            rA_temp_Ptr[cell] = rAPtr[cell];
+        }
+
+        #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+        for (label face=0; face<nFaces; face++)
+        {
+            atomicAccumulator(rA_temp_Ptr[uPtr[face]]) -= rDuUpperPtr[face]*rAPtr[lPtr[face]];
+        }
+
+        #pragma omp target teams distribute parallel for if (target:nFacesM1>10000)
+        for (label face=nFacesM1; face>=0; face--)
+        {
+            atomicAccumulator(rAPtr[lPtr[face]]) -= rDlUpperPtr[face]*rA_temp_Ptr[uPtr[face]];
+        }
+    #else
         for(label cell=0; cell<nCells; cell++)
         {
             rAPtr[cell] *= rDPtr[cell];
         }
-
-        const label nFaces = matrix_.upper().size();
+        
         for (label face=0; face<nFaces; face++)
         {
             rAPtr[uPtr[face]] -= rDuUpperPtr[face]*rAPtr[lPtr[face]];
         }
-
-        const label nFacesM1 = nFaces - 1;
+        
         for (label face=nFacesM1; face>=0; face--)
         {
             rAPtr[lPtr[face]] -= rDlUpperPtr[face]*rAPtr[uPtr[face]];
         }
-
+    #endif
         psi += rA;
     }
 }

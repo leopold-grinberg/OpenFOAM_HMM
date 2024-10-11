@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2017-2022 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -28,6 +29,16 @@ License
 
 #include "GAMGSolver.H"
 #include "FixedList.H"
+
+#ifdef USE_OMP
+#include <omp.h>
+    #ifndef OMP_UNIFIED_MEMORY_REQUIRED
+    #define OMP_UNIFIED_MEMORY_REQUIRED
+    #pragma omp requires unified_shared_memory
+    #endif
+
+#include "AtomicAccumulator.H"
+#endif
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
@@ -60,6 +71,9 @@ void Foam::GAMGSolver::scale
 
     FixedList<solveScalar, 2> scalingFactor(Zero);
 
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (target:nCells>20000)
+#endif
     for (label i=0; i<nCells; i++)
     {
         scalingFactor[0] += fieldPtr[i]*sourcePtr[i];
@@ -82,6 +96,9 @@ void Foam::GAMGSolver::scale
     const scalarField& D = A.diag();
     const scalar* const __restrict__ DPtr = D.begin();
 
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (target:nCells>20000)
+#endif
     for (label i=0; i<nCells; i++)
     {
         fieldPtr[i] = sf*fieldPtr[i] + (sourcePtr[i] - sf*AcfPtr[i])/DPtr[i];

@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2023 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -30,6 +31,16 @@ License
 #include "mapDistribute.H"
 #include "globalIndex.H"
 
+#ifdef USE_OMP
+#include <omp.h>
+    #ifndef OMP_UNIFIED_MEMORY_REQUIRED
+    #define OMP_UNIFIED_MEMORY_REQUIRED
+    #pragma omp requires unified_shared_memory
+    #endif
+
+#include "AtomicAccumulator.H"
+#endif
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 template<class Type>
@@ -42,10 +53,18 @@ void Foam::GAMGAgglomeration::restrictField
 {
     cf = Zero;
 
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (target:ff.size()>10000)
+    for (label i=0; i<ff.size(); i++)
+    {
+        atomicAccumulator(cf[fineToCoarse[i]]) += ff[i];
+    }
+#else
     forAll(ff, i)
     {
         cf[fineToCoarse[i]] += ff[i];
     }
+#endif
 }
 
 
@@ -115,6 +134,18 @@ void Foam::GAMGAgglomeration::restrictFaceField
 
     cf = Zero;
 
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (target:fineToCoarse.size()>10000)
+    for (label ffacei=0; ffacei<fineToCoarse.size(); ffacei++)
+    {
+        label cFace = fineToCoarse[ffacei];
+
+        if (cFace >= 0)
+        {
+            atomicAccumulator(cf[cFace]) += ff[ffacei];
+        }
+    }
+#else
     forAll(fineToCoarse, ffacei)
     {
         label cFace = fineToCoarse[ffacei];
@@ -124,6 +155,7 @@ void Foam::GAMGAgglomeration::restrictFaceField
             cf[cFace] += ff[ffacei];
         }
     }
+#endif
 }
 
 
@@ -162,14 +194,20 @@ void Foam::GAMGAgglomeration::prolongField
             Pstream::commsTypes::nonBlocking    //Pstream::commsTypes::scheduled
         );
 
-        forAll(fineToCoarse, i)
+    #ifdef USE_OMP
+        #pragma omp target teams distribute parallel for if (fineToCoarse.size()>10000)
+    #endif
+        for (label i=0; i<fineToCoarse.size(); i++)
         {
             ff[i] = allCf[fineToCoarse[i]];
         }
     }
     else
     {
-        forAll(fineToCoarse, i)
+    #ifdef USE_OMP
+        #pragma omp target teams distribute parallel for if (fineToCoarse.size()>10000)
+    #endif
+        for (label i=0; i<fineToCoarse.size(); i++)
         {
             ff[i] = cf[fineToCoarse[i]];
         }
@@ -212,7 +250,10 @@ const Foam::Field<Type>& Foam::GAMGAgglomeration::prolongField
             Pstream::commsTypes::nonBlocking    //Pstream::commsTypes::scheduled
         );
 
-        forAll(fineToCoarse, i)
+    #ifdef USE_OMP
+        #pragma omp target teams distribute parallel for if (fineToCoarse.size()>10000)
+    #endif
+        for (label i=0; i<fineToCoarse.size(); i++)
         {
             ff[i] = allCf[fineToCoarse[i]];
         }
@@ -220,7 +261,10 @@ const Foam::Field<Type>& Foam::GAMGAgglomeration::prolongField
     }
     else
     {
-        forAll(fineToCoarse, i)
+    #ifdef USE_OMP
+        #pragma omp target teams distribute parallel for if (fineToCoarse.size()>10000)
+    #endif
+        for (label i=0; i<fineToCoarse.size(); i++)
         {
             ff[i] = cf[fineToCoarse[i]];
         }

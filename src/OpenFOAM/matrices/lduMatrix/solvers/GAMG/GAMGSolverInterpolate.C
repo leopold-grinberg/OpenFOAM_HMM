@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2013-2015 OpenFOAM Foundation
     Copyright (C) 2017-2019 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -27,6 +28,16 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "GAMGSolver.H"
+
+#ifdef USE_OMP
+#include <omp.h>
+    #ifndef OMP_UNIFIED_MEMORY_REQUIRED
+    #define OMP_UNIFIED_MEMORY_REQUIRED
+    #pragma omp requires unified_shared_memory
+    #endif
+
+#include "AtomicAccumulator.H"
+#endif
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
@@ -65,11 +76,20 @@ void Foam::GAMGSolver::interpolate
     );
 
     const label nFaces = m.upper().size();
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+    for (label face=0; face<nFaces; face++)
+    {
+        atomicAccumulator(ApsiPtr[uPtr[face]]) += lowerPtr[face]*psiPtr[lPtr[face]];
+        atomicAccumulator(ApsiPtr[lPtr[face]]) += upperPtr[face]*psiPtr[uPtr[face]];
+    }
+#else
     for (label face=0; face<nFaces; face++)
     {
         ApsiPtr[uPtr[face]] += lowerPtr[face]*psiPtr[lPtr[face]];
         ApsiPtr[lPtr[face]] += upperPtr[face]*psiPtr[uPtr[face]];
     }
+#endif
 
     m.updateMatrixInterfaces
     (
@@ -83,6 +103,9 @@ void Foam::GAMGSolver::interpolate
     );
 
     const label nCells = m.diag().size();
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (target:nCells>20000)
+#endif
     for (label celli=0; celli<nCells; celli++)
     {
         psiPtr[celli] = -ApsiPtr[celli]/(diagPtr[celli]);
@@ -125,17 +148,26 @@ void Foam::GAMGSolver::interpolate
     solveScalarField diagC(nCCells, 0);
     solveScalar* __restrict__ diagCPtr = diagC.begin();
 
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (target:nCells>20000)
+#endif
     for (label celli=0; celli<nCells; celli++)
     {
         corrCPtr[restrictAddressing[celli]] += diagPtr[celli]*psiPtr[celli];
         diagCPtr[restrictAddressing[celli]] += diagPtr[celli];
     }
 
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (target:nCCells>20000)
+#endif
     for (label ccelli=0; ccelli<nCCells; ccelli++)
     {
         corrCPtr[ccelli] = psiCPtr[ccelli] - corrCPtr[ccelli]/diagCPtr[ccelli];
     }
 
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (target:nCells>20000)
+#endif
     for (label celli=0; celli<nCells; celli++)
     {
         psiPtr[celli] += corrCPtr[restrictAddressing[celli]];

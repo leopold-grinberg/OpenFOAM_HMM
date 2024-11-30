@@ -39,6 +39,8 @@ License
     #define OMP_UNIFIED_MEMORY_REQUIRED
     #pragma omp requires unified_shared_memory
     #endif
+
+#include "macros.H"
 #endif
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
@@ -96,7 +98,7 @@ inline void Foam::List<T>::copyList(const ListType& list)
                   std::is_same<T,Foam::Vector<scalar>>() || std::is_same<T,Foam::Tensor<scalar>>()
                 )
     {
-        #pragma omp target teams distribute parallel for if (target:len > 10000)
+        #pragma omp target teams distribute parallel for if (len > THRESHOLD_LOW)
         for (label i = 0; i < len; ++i)
         {
             *iter = list[i];
@@ -139,7 +141,7 @@ inline void Foam::List<T>::copyList
                   std::is_same<T,Foam::Vector<scalar>>() || std::is_same<T,Foam::Tensor<scalar>>()
                 )
     {
-        #pragma omp target teams distribute parallel for if (target:len > 10000)
+        #pragma omp target teams distribute parallel for if (len > THRESHOLD_LOW)
         for (label i = 0; i < len; ++i)
         {
             *iter = list[indices[i]];

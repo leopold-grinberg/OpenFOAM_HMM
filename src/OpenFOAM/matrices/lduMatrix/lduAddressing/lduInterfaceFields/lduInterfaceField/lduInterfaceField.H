@@ -53,6 +53,7 @@ SourceFiles
     #endif
 
 #include "AtomicAccumulator.H"
+#include "macros.H"
 #endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //

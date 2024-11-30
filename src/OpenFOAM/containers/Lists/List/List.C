@@ -365,7 +365,7 @@ void Foam::List<T>::resize(const label len, const T& val)
         if constexpr (std::is_same<T,scalar>() || std::is_same<T,label>() || std::is_same<T,Foam::Vector<scalar>>())
         {
             T * __restrict__ vp_ptr = this->begin();
-            #pragma omp target teams distribute parallel for if (target:(len-oldLen) > 10000)
+            #pragma omp target teams distribute parallel for if ((len-oldLen) > THRESHOLD_LOW)
             for (label i=oldLen; i<len; ++i)
             {
                 vp_ptr[i] = val;

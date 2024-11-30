@@ -73,6 +73,8 @@ SourceFiles
     template<typename T> class Vector;
     template<typename T> class Tensor;
     }
+
+#include "macros.H"
 #endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //

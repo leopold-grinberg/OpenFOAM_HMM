@@ -39,6 +39,7 @@ Description
     #endif
 
 #include "AtomicAccumulator.H"
+#include "macros.H"
 #endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -63,7 +64,7 @@ Foam::tmp<Foam::Field<Type>> Foam::lduMatrix::H(const Field<Type>& psi) const
         const label nFaces = upper().size();
 
     #ifdef USE_OMP
-        #pragma omp target teams distribute parallel for if (target:nFaces>10000) thread_limit(256) 
+        #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW) thread_limit(256) 
         for (label face=0; face<nFaces; face+=2)
         {
             const label nf = (nFaces - face) > 1 ? 2 : 1;
@@ -116,7 +117,7 @@ Foam::lduMatrix::faceH(const Field<Type>& psi) const
 
         const label nFaces = l.size();
     #ifdef USE_OMP
-        #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+        #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW)
     #endif
         for (label face=0; face<nFaces; face++)
         {

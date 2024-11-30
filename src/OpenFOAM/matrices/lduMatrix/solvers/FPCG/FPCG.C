@@ -37,6 +37,8 @@ License
     #define OMP_UNIFIED_MEMORY_REQUIRED
     #pragma omp requires unified_shared_memory
     #endif
+
+#include "macros.H"
 #endif
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
@@ -88,7 +90,7 @@ void Foam::FPCG::gSumMagProd
 
     globalSum = 0.0;
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:nCells>20000)
+    #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_HIGH)
 #endif
     for (label cell=0; cell<nCells; ++cell)
     {
@@ -211,7 +213,7 @@ Foam::solverPerformance Foam::FPCG::scalarSolve
             if (solverPerf.nIterations() == 0)
             {
             #ifdef USE_OMP
-                #pragma omp target teams distribute parallel for if (target:nCells>20000)
+                #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_HIGH)
             #endif
                 for (label cell=0; cell<nCells; cell++)
                 {
@@ -223,7 +225,7 @@ Foam::solverPerformance Foam::FPCG::scalarSolve
                 const solveScalar beta = wArA/wArAold;
 
             #ifdef USE_OMP
-                #pragma omp target teams distribute parallel for if (target:nCells>20000)
+                #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_HIGH)
             #endif
                 for (label cell=0; cell<nCells; cell++)
                 {
@@ -246,7 +248,7 @@ Foam::solverPerformance Foam::FPCG::scalarSolve
             const solveScalar alpha = wArA/wApA;
 
         #ifdef USE_OMP
-            #pragma omp target teams distribute parallel for if (target:nCells>20000)
+            #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_HIGH)
         #endif
             for (label cell=0; cell<nCells; cell++)
             {

@@ -38,6 +38,7 @@ License
     #endif
 
 #include "AtomicAccumulator.H"
+#include "macros.H"
 #endif
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
@@ -166,13 +167,13 @@ void Foam::GaussSeidelSmoother::smooth
 
         const label nFaces = matrix_.upper().size();
 
-        #pragma omp target teams distribute parallel for if (target:nCells>200000)
+        #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_HIGH)
         for (label celli=0; celli<nCells; celli++)
         {
             rPtr[celli] = diagPtr[celli]*psiPtr[celli];
         }
 
-        #pragma omp target teams distribute parallel for if (target:nFaces>10000) thread_limit(256)
+        #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW) thread_limit(256)
         for (label face=0; face<nFaces; face+=2)
         {
             const label nf = (nFaces - face) > 1 ? 2 : 1;
@@ -186,7 +187,7 @@ void Foam::GaussSeidelSmoother::smooth
             }
         }
 
-        #pragma omp target teams distribute parallel for if (target:nCells>20000)
+        #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_HIGH)
         for (label celli=0; celli<nCells; celli++)
         {
             scalar r = rhsPtr[celli] - rPtr[celli];
@@ -196,7 +197,7 @@ void Foam::GaussSeidelSmoother::smooth
 
         scalar multiplier = -1.0;
 
-        #pragma omp target teams distribute parallel for if(target:nCells>20000)
+        #pragma omp target teams distribute parallel for if(nCells > THRESHOLD_HIGH)
         for(label celli=0; celli<nCells; celli++)
         {
             fStart  = ownStartPtr[celli];
@@ -212,7 +213,7 @@ void Foam::GaussSeidelSmoother::smooth
             rPtr[celli] = tmp;
         }
 
-        #pragma omp target teams distribute parallel for if (target:nCells>20000)
+        #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_HIGH)
         for (label celli=0; celli<nCells; celli++)
         {
             zPtr[celli] = rPtr[celli]/diagPtr[celli];

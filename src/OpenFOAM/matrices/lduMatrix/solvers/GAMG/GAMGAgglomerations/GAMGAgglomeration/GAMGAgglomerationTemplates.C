@@ -39,6 +39,7 @@ License
     #endif
 
 #include "AtomicAccumulator.H"
+#include "macros.H"
 #endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -54,7 +55,7 @@ void Foam::GAMGAgglomeration::restrictField
     cf = Zero;
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:ff.size()>10000)
+    #pragma omp target teams distribute parallel for if (ff.size() > THRESHOLD_LOW)
     for (label i=0; i<ff.size(); i++)
     {
         atomicAccumulator(cf[fineToCoarse[i]]) += ff[i];
@@ -135,7 +136,7 @@ void Foam::GAMGAgglomeration::restrictFaceField
     cf = Zero;
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:fineToCoarse.size()>10000)
+    #pragma omp target teams distribute parallel for if (fineToCoarse.size() > THRESHOLD_LOW)
     for (label ffacei=0; ffacei<fineToCoarse.size(); ffacei++)
     {
         label cFace = fineToCoarse[ffacei];
@@ -195,7 +196,7 @@ void Foam::GAMGAgglomeration::prolongField
         );
 
     #ifdef USE_OMP
-        #pragma omp target teams distribute parallel for if (fineToCoarse.size()>10000)
+        #pragma omp target teams distribute parallel for if (fineToCoarse.size() > THRESHOLD_LOW)
     #endif
         for (label i=0; i<fineToCoarse.size(); i++)
         {
@@ -205,7 +206,7 @@ void Foam::GAMGAgglomeration::prolongField
     else
     {
     #ifdef USE_OMP
-        #pragma omp target teams distribute parallel for if (fineToCoarse.size()>10000)
+        #pragma omp target teams distribute parallel for if (fineToCoarse.size() > THRESHOLD_LOW)
     #endif
         for (label i=0; i<fineToCoarse.size(); i++)
         {
@@ -251,7 +252,7 @@ const Foam::Field<Type>& Foam::GAMGAgglomeration::prolongField
         );
 
     #ifdef USE_OMP
-        #pragma omp target teams distribute parallel for if (fineToCoarse.size()>10000)
+        #pragma omp target teams distribute parallel for if (fineToCoarse.size() > THRESHOLD_LOW)
     #endif
         for (label i=0; i<fineToCoarse.size(); i++)
         {
@@ -262,7 +263,7 @@ const Foam::Field<Type>& Foam::GAMGAgglomeration::prolongField
     else
     {
     #ifdef USE_OMP
-        #pragma omp target teams distribute parallel for if (fineToCoarse.size()>10000)
+        #pragma omp target teams distribute parallel for if (fineToCoarse.size() > THRESHOLD_LOW)
     #endif
         for (label i=0; i<fineToCoarse.size(); i++)
         {

@@ -42,7 +42,7 @@ void Foam::lduInterfaceField::addToInternalField
     {
     #ifdef USE_OMP
         const label fCells = faceCells.size();
-        #pragma omp target teams distribute parallel for if (target:fCells>10000)
+        #pragma omp target teams distribute parallel for if (fCells > THRESHOLD_LOW)
         for (label elemi = 0; elemi < fCells; elemi++)
         {
             atomicAccumulator(result[faceCells[elemi]]) += (coeffs[elemi]*vals[elemi]);
@@ -58,7 +58,7 @@ void Foam::lduInterfaceField::addToInternalField
     {
     #ifdef USE_OMP
         const label fCells = faceCells.size();
-        #pragma omp target teams distribute parallel for if (target:fCells>10000)
+        #pragma omp target teams distribute parallel for if (fCells > THRESHOLD_LOW)
         for (label elemi = 0; elemi < fCells; elemi++)
         {
             atomicAccumulator(result[faceCells[elemi]]) -= (coeffs[elemi]*vals[elemi]);

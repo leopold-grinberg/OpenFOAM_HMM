@@ -39,6 +39,7 @@ License
     #endif
 
 #include "AtomicAccumulator.H"
+#include "macros.H"
 #endif
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
@@ -94,7 +95,7 @@ Foam::FDICSmoother::FDICSmoother
     const solveScalar* __restrict__ diagPtr = diag.begin();
     solveScalar* __restrict__ rD_Ptr = rD_.begin();
 
-    #pragma omp target teams distribute parallel for if (target:loop_len>20000)
+    #pragma omp target teams distribute parallel for if (loop_len > THRESHOLD_HIGH)
     for (label i = 0; i < loop_len; ++i)
     {
         rD_Ptr[i] = diagPtr[i];
@@ -105,7 +106,7 @@ Foam::FDICSmoother::FDICSmoother
     DICPreconditioner::calcReciprocalD(rD_, matrix_);
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+    #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW)
 #endif
     for (label face=0; face<nFaces; face++)
     {
@@ -157,20 +158,20 @@ void Foam::FDICSmoother::smooth
         solveScalarField rA_temp(rA.size());
         solveScalar* __restrict__ rA_temp_Ptr = rA_temp.begin();
 
-        #pragma omp target teams distribute parallel for if (target:nCells>20000)
+        #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_HIGH)
         for(label cell=0; cell<nCells; cell++)
         {
             rAPtr[cell] *= rDPtr[cell];
             rA_temp_Ptr[cell] = rAPtr[cell];
         }
 
-        #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+        #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW)
         for (label face=0; face<nFaces; face++)
         {
             atomicAccumulator(rA_temp_Ptr[uPtr[face]]) -= rDuUpperPtr[face]*rAPtr[lPtr[face]];
         }
 
-        #pragma omp target teams distribute parallel for if (target:nFacesM1>10000)
+        #pragma omp target teams distribute parallel for if (nFacesM1 > THRESHOLD_LOW)
         for (label face=nFacesM1; face>=0; face--)
         {
             atomicAccumulator(rAPtr[lPtr[face]]) -= rDlUpperPtr[face]*rA_temp_Ptr[uPtr[face]];

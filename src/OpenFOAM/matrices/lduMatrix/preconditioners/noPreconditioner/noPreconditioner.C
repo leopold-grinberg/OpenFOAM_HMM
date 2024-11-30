@@ -35,6 +35,8 @@ License
     #define OMP_UNIFIED_MEMORY_REQUIRED
     #pragma omp requires unified_shared_memory
     #endif
+
+#include "macros.H"    
 #endif
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
@@ -80,7 +82,7 @@ void Foam::noPreconditioner::precondition
     const label nCells = wA.size();
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:nCells>20000)
+    #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_HIGH)
 #endif
     for (label cell=0; cell<nCells; cell++)
     {

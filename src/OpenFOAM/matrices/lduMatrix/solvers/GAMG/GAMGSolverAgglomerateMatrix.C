@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2023 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -30,6 +31,17 @@ License
 #include "GAMGInterfaceField.H"
 #include "processorLduInterfaceField.H"
 #include "processorGAMGInterfaceField.H"
+
+#ifdef USE_OMP
+#include <omp.h>
+    #ifndef OMP_UNIFIED_MEMORY_REQUIRED
+    #define OMP_UNIFIED_MEMORY_REQUIRED
+    #pragma omp requires unified_shared_memory
+    #endif
+
+#include "AtomicAccumulator.H"
+#include "macros.H"
+#endif
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
@@ -177,18 +189,21 @@ void Foam::GAMGSolver::agglomerateMatrix
             // Coarse matrix upper coefficients
             scalarField& coarseUpper = coarseMatrix.upper(nCoarseFaces);
 
-            forAll(faceRestrictAddr, fineFacei)
+        #ifdef USE_OMP
+            #pragma omp target teams distribute parallel for if (faceRestrictAddr.size() > THRESHOLD_LOW) thread_limit (128)
+        #endif    
+            for (label fineFacei = 0; fineFacei < faceRestrictAddr.size(); ++fineFacei)
             {
                 label cFace = faceRestrictAddr[fineFacei];
 
                 if (cFace >= 0)
                 {
-                    coarseUpper[cFace] += fineUpper[fineFacei];
+                    atomicAccumulator(coarseUpper[cFace]) += fineUpper[fineFacei];
                 }
                 else
                 {
                     // Add the fine face coefficient into the diagonal.
-                    coarseDiag[-1 - cFace] += 2*fineUpper[fineFacei];
+                    atomicAccumulator(coarseDiag[-1 - cFace]) += 2*fineUpper[fineFacei];
                 }
             }
         }

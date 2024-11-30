@@ -41,6 +41,7 @@ License
     #endif
 
 #include "AtomicAccumulator.H"
+#include "macros.H"
 #endif
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
@@ -461,7 +462,7 @@ void Foam::GAMGSolver::Vcycle
     }
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:psi.size()>20000)
+    #pragma omp target teams distribute parallel for if (psi.size() > THRESHOLD_HIGH)
 #endif
     for (label i=0; i<psi.size(); i++)
     {

@@ -37,6 +37,7 @@ License
     #endif
 
 #include "AtomicAccumulator.H"
+#include "macros.H"
 #endif
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
@@ -77,7 +78,7 @@ void Foam::GAMGSolver::interpolate
 
     const label nFaces = m.upper().size();
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+    #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW)
     for (label face=0; face<nFaces; face++)
     {
         atomicAccumulator(ApsiPtr[uPtr[face]]) += lowerPtr[face]*psiPtr[lPtr[face]];
@@ -104,7 +105,7 @@ void Foam::GAMGSolver::interpolate
 
     const label nCells = m.diag().size();
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:nCells>20000)
+    #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_HIGH)
 #endif
     for (label celli=0; celli<nCells; celli++)
     {
@@ -149,7 +150,7 @@ void Foam::GAMGSolver::interpolate
     solveScalar* __restrict__ diagCPtr = diagC.begin();
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:nCells>20000)
+    #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_HIGH)
 #endif
     for (label celli=0; celli<nCells; celli++)
     {
@@ -158,7 +159,7 @@ void Foam::GAMGSolver::interpolate
     }
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:nCCells>20000)
+    #pragma omp target teams distribute parallel for if (nCCells > THRESHOLD_HIGH)
 #endif
     for (label ccelli=0; ccelli<nCCells; ccelli++)
     {
@@ -166,7 +167,7 @@ void Foam::GAMGSolver::interpolate
     }
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:nCells>20000)
+    #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_HIGH)
 #endif
     for (label celli=0; celli<nCells; celli++)
     {

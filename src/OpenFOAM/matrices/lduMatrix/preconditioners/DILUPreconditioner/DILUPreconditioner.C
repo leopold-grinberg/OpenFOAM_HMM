@@ -38,6 +38,7 @@ License
     #endif
 
 #include "AtomicAccumulator.H"
+#include "macros.H"
 #endif
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
@@ -69,7 +70,7 @@ Foam::DILUPreconditioner::DILUPreconditioner
     const solveScalar* __restrict__ diagPtr = diag.begin();
     solveScalar* __restrict__ rD_Ptr = rD_.begin();
 
-    #pragma omp target teams distribute parallel for if (target:loop_len>20000)
+    #pragma omp target teams distribute parallel for if (loop_len > THRESHOLD_HIGH)
     for (label i = 0; i < loop_len; ++i)
     {
         rD_Ptr[i] = diagPtr[i];
@@ -103,13 +104,13 @@ void Foam::DILUPreconditioner::calcReciprocalD
     solveScalarField rD_temp(rD.size());
     solveScalar* __restrict__ rD_temp_Ptr = rD_temp.begin();
 
-    #pragma omp target teams distribute parallel for if (target:nCells>20000)
+    #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_HIGH)
     for (label cell=0; cell<nCells; cell++)
     {
         rD_temp_Ptr[cell] = 0.0;
     }
     // Calculate the sum[cell] += U[cell][j]*L[j][cell]/D[j]
-    #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+    #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW)
     for (label face=0; face<nFaces; face++)
     {
         atomicAccumulator(rD_temp_Ptr[uPtr[face]]) += upperPtr[face]*lowerPtr[face]/rDPtr[lPtr[face]];
@@ -117,7 +118,7 @@ void Foam::DILUPreconditioner::calcReciprocalD
 
     // Calculate the reciprocal of the preconditioned diagonal
     // inv_D [cell] = 1/(D[cell] - sum[cell])
-    #pragma omp target teams distribute parallel for if (target:nCells>20000)
+    #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_HIGH)
     for (label cell=0; cell<nCells; cell++)
     {
         rDPtr[cell] = 1.0/(rDPtr[cell] - rD_temp_Ptr[cell]);
@@ -168,14 +169,14 @@ void Foam::DILUPreconditioner::precondition
     solveScalarField wA_temp(wA.size());
     solveScalar* __restrict__ wA_temp_Ptr = wA_temp.begin();
 
-    #pragma omp target teams distribute parallel for if (target:nCells>20000)
+    #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_HIGH)
     for (label cell=0; cell<nCells; cell++)
     {
         wAPtr[cell] = rDPtr[cell]*rAPtr[cell];
         wA_temp_Ptr[cell] = wAPtr[cell];
     }
 
-    #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+    #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW)
     for (label face=0; face<nFaces; face++)
     {
         const label sface = losortPtr[face];
@@ -183,7 +184,7 @@ void Foam::DILUPreconditioner::precondition
             rDPtr[uPtr[sface]]*lowerPtr[sface]*wAPtr[lPtr[sface]];
     }
 
-    #pragma omp target teams distribute parallel for if (target:nFacesM1>10000)
+    #pragma omp target teams distribute parallel for if (nFacesM1 > THRESHOLD_LOW)
     for (label face=nFacesM1; face>=0; face--)
     {
         const label lptr_index = lPtr[face];
@@ -243,21 +244,21 @@ void Foam::DILUPreconditioner::preconditionT
     solveScalarField wT_temp(wT.size());
     solveScalar* __restrict__ wT_temp_Ptr = wT_temp.begin();
     
-    #pragma omp target teams distribute parallel for if (target:nCells>20000)
+    #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_HIGH)
     for (label cell=0; cell<nCells; cell++)
     {
         wTPtr[cell] = rDPtr[cell]*rTPtr[cell];
         wT_temp_Ptr[cell] = wTPtr[cell];
     }
 
-    #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+    #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW)
     for (label face=0; face<nFaces; face++)
     {
         atomicAccumulator(wT_temp_Ptr[uPtr[face]]) -=
             rDPtr[uPtr[face]]*upperPtr[face]*wTPtr[lPtr[face]];
     }
 
-    #pragma omp target teams distribute parallel for if (target:nFacesM1>10000)
+    #pragma omp target teams distribute parallel for if (nFacesM1 > THRESHOLD_LOW)
     for (label face=nFacesM1; face>=0; face--)
     {
         const label sface = losortPtr[face];

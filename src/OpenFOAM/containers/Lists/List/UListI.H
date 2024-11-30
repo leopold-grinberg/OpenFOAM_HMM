@@ -61,7 +61,7 @@ inline void Foam::UList<T>::fill_uniform(const T& val)
     {
         T * __restrict__ vp_ptr = this->begin();
         const label len = this->size_;
-        #pragma omp target teams distribute parallel for if (target:len > 10000)
+        #pragma omp target teams distribute parallel for if (len > THRESHOLD_LOW)
         for (label i=0; i < len; i+=2)
         {
             #pragma unroll 2
@@ -109,7 +109,7 @@ inline void Foam::UList<T>::fill_uniform(const Foam::zero)
         {
             T * __restrict__ vp_ptr = this->begin();
             const label len = this->size_;
-            #pragma omp target teams distribute parallel for if (target:len > 10000)
+            #pragma omp target teams distribute parallel for if (len > THRESHOLD_LOW)
             for (label i=0; i < len; i+=2)
             {
                 #pragma unroll 2
@@ -145,7 +145,7 @@ inline void Foam::UList<T>::fill_uniform(const Foam::zero)
 
     #ifdef USE_OMP
         const label len = this->size_;
-        #pragma omp target teams distribute parallel for if (target:len > 10000)
+        #pragma omp target teams distribute parallel for if (len > THRESHOLD_LOW)
     #endif
         for (auto first = this->v_; (first != last); ++first)
         {

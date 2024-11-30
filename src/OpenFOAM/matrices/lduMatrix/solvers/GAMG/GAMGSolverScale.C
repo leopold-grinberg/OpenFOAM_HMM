@@ -38,6 +38,7 @@ License
     #endif
 
 #include "AtomicAccumulator.H"
+#include "macros.H"
 #endif
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
@@ -72,7 +73,7 @@ void Foam::GAMGSolver::scale
     FixedList<solveScalar, 2> scalingFactor(Zero);
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:nCells>20000)
+    #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_HIGH)
 #endif
     for (label i=0; i<nCells; i++)
     {
@@ -97,7 +98,7 @@ void Foam::GAMGSolver::scale
     const scalar* const __restrict__ DPtr = D.begin();
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:nCells>20000)
+    #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_HIGH)
 #endif
     for (label i=0; i<nCells; i++)
     {

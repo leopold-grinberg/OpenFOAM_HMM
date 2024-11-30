@@ -41,6 +41,7 @@ Description
     #endif
 
 #include "AtomicAccumulator.H"
+#include "macros.H"
 #endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -82,7 +83,7 @@ void Foam::lduMatrix::Amul
 
     const label nCells = diag().size();
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:nCells>10000)
+    #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_LOW)
 #endif
     for (label cell=0; cell<nCells; cell++)
     {
@@ -93,7 +94,7 @@ void Foam::lduMatrix::Amul
     const label nFaces = upper().size();
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:nFaces>10000) thread_limit(256)
+    #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW) thread_limit(256)
     for (label face=0; face<nFaces; face+=2)
     {
         const label nf = (nFaces-face) > 1 ? 2 : 1;
@@ -167,7 +168,7 @@ void Foam::lduMatrix::Tmul
 
     const label nCells = diag().size();
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:nCells>10000)
+    #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_LOW)
 #endif
     for (label cell=0; cell<nCells; cell++)
     {
@@ -176,7 +177,7 @@ void Foam::lduMatrix::Tmul
 
     const label nFaces = upper().size();
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:nFaces>10000) thread_limit(256)
+    #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW) thread_limit(256)
     for (label face=0; face<nFaces; face+=2)
     {
         const label nf = (nFaces-face) > 1 ? 2 : 1;
@@ -235,7 +236,7 @@ void Foam::lduMatrix::sumA
     const label nFaces = upper().size();
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:nCells>10000)
+    #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_LOW)
 #endif
     for (label cell=0; cell<nCells; cell++)
     {
@@ -243,7 +244,7 @@ void Foam::lduMatrix::sumA
     }
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:nFaces>10000) thread_limit(256)
+    #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW) thread_limit(256)
     for (label face=0; face<nFaces; face+=2)
     {
         const label nf = (nFaces-face) > 1 ? 2 : 1;
@@ -274,7 +275,7 @@ void Foam::lduMatrix::sumA
             const labelUList& pa = lduAddr().patchAddr(patchi);
             const scalarField& pCoeffs = interfaceBouCoeffs[patchi];
         #ifdef USE_OMP
-            #pragma omp target teams distribute parallel for if (target:pa.size()>10000)
+            #pragma omp target teams distribute parallel for if (pa.size() > THRESHOLD_LOW)
             for (label face=0; face<pa.size(); face++)
             {
                 atomicAccumulator(sumAPtr[pa[face]]) -= pCoeffs[face];
@@ -338,7 +339,7 @@ void Foam::lduMatrix::residual
 
     const label nCells = diag().size();
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:nCells>10000)
+    #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_LOW)
 #endif
     for (label cell=0; cell<nCells; cell++)
     {
@@ -349,7 +350,7 @@ void Foam::lduMatrix::residual
     const label nFaces = upper().size();
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:nFaces>10000) thread_limit(256)
+    #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW) thread_limit(256)
     for (label face=0; face<nFaces; face+=2)
     {
         const label nf = (nFaces-face) > 1 ? 2 : 1;
@@ -416,7 +417,7 @@ Foam::tmp<Foam::scalarField> Foam::lduMatrix::H1() const
         const label nFaces = upper().size();
 
     #ifdef USE_OMP
-        #pragma omp target teams distribute parallel for if (target:nFaces>10000) thread_limit(256)
+        #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW) thread_limit(256)
         for (label face=0; face<nFaces; face+=2)
         {
             const label nf = (nFaces-face) > 1 ? 2 : 1;

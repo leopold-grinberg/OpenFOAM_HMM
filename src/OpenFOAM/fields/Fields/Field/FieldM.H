@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2022-2023 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -42,6 +43,7 @@ Description
     #pragma omp requires unified_shared_memory
     #endif
 
+#include "macros.H"
 #include <type_traits>
 #endif
 
@@ -210,7 +212,7 @@ void checkFields
                  (std::is_same<typeF1,Vector<scalar>>() && std::is_same<typeF2,Tensor<scalar>>())||     \
                  (std::is_same<typeF1,Tensor<int>>() && std::is_same<typeF2,Tensor<int>>())             \
                 ){                                                             \
-        _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)") \
+        _Pragma("omp target teams distribute parallel for if (loop_len > THRESHOLD_LOW)") \
         for (label i = 0; i < loop_len; ++i)                                   \
         {                                                                      \
             (f1P[i]) OP FUNC(f2P[i]);                                          \
@@ -244,7 +246,7 @@ void checkFields
                  !(std::is_same<typeF1,Tensor<scalar>>() && std::is_same<typeF2,Tensor<scalar>>())          \
                 ){                                                             \
         /* pragmas... */                                                       \
-        _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)") \
+        _Pragma("omp target teams distribute parallel for if (loop_len > THRESHOLD_LOW)") \
         for (label i = 0; i < loop_len; ++i)                                   \
         {                                                                      \
             (f1P[i]) OP (f2P[i]).FUNC();                                       \
@@ -276,7 +278,7 @@ void checkFields
     const label loop_len = (f1).size();                                        \
                                                                                \
     /* pragmas... */                                                           \
-    _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)") \
+    _Pragma("omp target teams distribute parallel for if (loop_len > THRESHOLD_LOW)") \
     for (label i = 0; i < loop_len; ++i)                                       \
     {                                                                          \
         (f1P[i]) OP FUNC((f2P[i]), (f3P[i]));                                  \
@@ -321,7 +323,7 @@ void checkFields
     const label loop_len = (f1).size();                                        \
                                                                                \
     /* pragmas... */                                                           \
-    _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)") \
+    _Pragma("omp target teams distribute parallel for if (loop_len > THRESHOLD_LOW)") \
     for (label i = 0; i < loop_len; ++i)                                       \
     {                                                                          \
         (f1P[i]) OP FUNC((f2P[i]), (s));                                       \
@@ -363,7 +365,7 @@ void checkFields
     const label loop_len = (f1).size();                                        \
                                                                                \
     /* pragmas... */                                                           \
-    _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)") \
+    _Pragma("omp target teams distribute parallel for if (loop_len > THRESHOLD_LOW)") \
     for (label i = 0; i < loop_len; ++i)                                       \
     {                                                                          \
         (f1P[i]) OP FUNC((s), (f2P[i]));                                       \
@@ -382,7 +384,7 @@ void checkFields
     const label loop_len = (f1).size();                                        \
                                                                                \
     /* pragmas... */                                                           \
-    _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)") \
+    _Pragma("omp target teams distribute parallel for if (loop_len > THRESHOLD_LOW)") \
     for (label i = 0; i < loop_len; ++i)                                       \
     {                                                                          \
         (f1P[i]) OP FUNC((s1), (s2));                                          \
@@ -405,7 +407,7 @@ void checkFields
     const label loop_len = (f1).size();                                        \
                                                                                \
     /* pragmas... */                                                           \
-    _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)") \
+    _Pragma("omp target teams distribute parallel for if (loop_len > THRESHOLD_LOW)") \
     for (label i = 0; i < loop_len; ++i)                                       \
     {                                                                          \
         (f1P[i]) OP (f2P[i]) FUNC((s));                                        \
@@ -433,7 +435,7 @@ void checkFields
     const label loop_len = (f1).size();                                        \
                                                                                \
     /* pragmas... */                                                           \
-    _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)") \
+    _Pragma("omp target teams distribute parallel for if (loop_len > THRESHOLD_LOW)") \
     for (label i = 0; i < loop_len; ++i)                                       \
     {                                                                          \
         (f1P[i]) OP FUNC((f2P[i]), (f3P[i]), (f4P[i]));                        \
@@ -457,7 +459,7 @@ void checkFields
     const label loop_len = (f1).size();                                        \
                                                                                \
     /* pragmas... */                                                           \
-    _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)") \
+    _Pragma("omp target teams distribute parallel for if (loop_len > THRESHOLD_LOW)") \
     for (label i = 0; i < loop_len; ++i)                                       \
     {                                                                          \
         (f1P[i]) OP FUNC((f2P[i]), (f3P[i]), (s4));                            \
@@ -485,7 +487,7 @@ void checkFields
     if constexpr(!(std::is_same<typeF2,complex>() && std::is_same<typeF3,complex>())\
                 ){                                                             \
         /* pragmas... */                                                       \
-        _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)") \
+        _Pragma("omp target teams distribute parallel for if (loop_len > THRESHOLD_LOW)") \
         for (label i = 0; i < loop_len; ++i)                                   \
         {                                                                      \
             (f1P[i]) OP1 (f2P[i]) OP2 (f3P[i]);                                \
@@ -518,7 +520,7 @@ void checkFields
     if constexpr(!(std::is_same<typeS,complex>() && std::is_same<typeF2,complex>())\
                 ){                                                             \
         /* pragmas... */                                                       \
-        _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)") \
+        _Pragma("omp target teams distribute parallel for if (loop_len > THRESHOLD_LOW)") \
         for (label i = 0; i < loop_len; ++i)                                   \
         {                                                                      \
             (f1P[i]) OP1 (s) OP2 (f2P[i]);                                     \
@@ -552,7 +554,7 @@ void checkFields
     if constexpr(!(std::is_same<typeF2,complex>() && std::is_same<typeS,complex>())\
                 ){                                                             \
         /* pragmas... */                                                       \
-        _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)")\
+        _Pragma("omp target teams distribute parallel for if (loop_len > THRESHOLD_LOW)")\
         for (label i = 0; i < loop_len; ++i)                                   \
         {                                                                      \
             (f1P[i]) OP1 (f2P[i]) OP2 (s);                                     \
@@ -584,7 +586,7 @@ void checkFields
     const label loop_len = (f1).size();                                        \
                                                                                \
     /* pragmas... */                                                           \
-    _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)")\
+    _Pragma("omp target teams distribute parallel for if (loop_len > THRESHOLD_LOW)")\
     for (label i = 0; i < loop_len; ++i)                                       \
     {                                                                          \
         (f1P[i]) OP (f2P[i]);                                                  \
@@ -610,7 +612,7 @@ void checkFields
                  (std::is_same<typeF1,scalar>() && std::is_same<typeF2,scalar>())\
                 ){                                                             \
         /* pragmas... */                                                       \
-        _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)")\
+        _Pragma("omp target teams distribute parallel for if (loop_len > THRESHOLD_LOW)")\
         for (label i = 0; i < loop_len; ++i)                                   \
         {                                                                      \
             (f1P[i]) OP1 OP2 (f2P[i]);                                         \
@@ -638,7 +640,7 @@ void checkFields
     const label loop_len = (f).size();                                         \
                                                                                \
     /* pragmas... */                                                           \
-    _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)")\
+    _Pragma("omp target teams distribute parallel for if (loop_len > THRESHOLD_LOW)")\
     for (label i = 0; i < loop_len; ++i)                                       \
     {                                                                          \
         (fP[i]) OP (s);                                                        \
@@ -659,7 +661,7 @@ void checkFields
     const label loop_len = (f).size();                                         \
                                                                                \
     /* pragmas, reduction... */                                                \
-    _Pragma("omp target teams distribute parallel for if(target:loop_len>10000)")\
+    _Pragma("omp target teams distribute parallel for if (loop_len > THRESHOLD_LOW)")\
     for (label i = 0; i < loop_len; ++i)                                       \
     {                                                                          \
         (s) OP (fP[i]);                                                        \
@@ -697,7 +699,7 @@ void checkFields
     typeS sum = (s);                                                           \
                                                                                \
     /* pragmas, reduction... */                                                \
-    _Pragma("omp target teams distribute parallel for reduction(+:sum) if(target:loop_len>10000)")\
+    _Pragma("omp target teams distribute parallel for reduction(+:sum) if (loop_len > THRESHOLD_LOW)")\
     for (label i = 0; i < loop_len; ++i)                                       \
     {                                                                          \
         sum OP FUNC(fP[i]);                                                    \

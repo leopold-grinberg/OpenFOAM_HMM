@@ -122,7 +122,7 @@ void Foam::UList<T>::deepCopy(const UList<T>& list)
             T * __restrict__ vp_ptr         = this->begin();
             const T * __restrict__ ap_ptr   = list.begin();
             const label len = this->size_;
-            #pragma omp target teams distribute parallel for if (target:len > 10000)
+            #pragma omp target teams distribute parallel for if (len > THRESHOLD_LOW)
             for (label i=0; i < len; ++i)
             {
                 vp_ptr[i] = ap_ptr[i];
@@ -172,7 +172,7 @@ void Foam::UList<T>::deepCopy(const IndirectListBase<T, Addr>& list)
                       std::is_same<T,Foam::Vector<scalar>>() || std::is_same<T,Foam::Tensor<scalar>>()
                     )
         {
-            #pragma omp target teams distribute parallel for if (target:len > 10000)
+            #pragma omp target teams distribute parallel for if (len > THRESHOLD_LOW)
             for (label i = 0; i < len; ++i)
             {
                 *iter = list[i];

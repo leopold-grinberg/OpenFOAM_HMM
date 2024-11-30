@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2019 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -69,7 +70,10 @@ void Foam::GAMGInterface::interfaceInternalField
 {
     result.resize(size());
 
-    forAll(result, elemi)
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (result.size() > THRESHOLD_HIGH) thread_limit(128)
+#endif
+    for (label elemi = 0; elemi < result.size(); ++elemi)
     {
         result[elemi] = iF[faceCells_[elemi]];
     }

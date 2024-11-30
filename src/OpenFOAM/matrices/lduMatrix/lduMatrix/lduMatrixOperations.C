@@ -40,6 +40,7 @@ Description
     #endif
 
 #include "AtomicAccumulator.H"
+#include "macros.H"
 #endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -54,7 +55,7 @@ void Foam::lduMatrix::sumDiag()
     const labelUList& u = lduAddr().upperAddr();
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:l.size()>10000) thread_limit(256)
+    #pragma omp target teams distribute parallel for if (l.size() > THRESHOLD_LOW) thread_limit(256)
     for (label face=0; face<l.size(); face+=2)
     {
         const label nf = (l.size()-face) > 1 ? 2 : 1;
@@ -85,7 +86,7 @@ void Foam::lduMatrix::negSumDiag()
     const labelUList& u = lduAddr().upperAddr();
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:l.size()>10000) thread_limit(256)
+    #pragma omp target teams distribute parallel for if (l.size() > THRESHOLD_LOW) thread_limit(256)
     for (label face=0; face<l.size(); face+=2)
     {
         const label nf = (l.size()-face) > 1 ? 2 : 1;
@@ -118,7 +119,7 @@ void Foam::lduMatrix::sumMagOffDiag
     const labelUList& u = lduAddr().upperAddr();
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:l.size()>10000) thread_limit(256)
+    #pragma omp target teams distribute parallel for if (l.size() > THRESHOLD_LOW) thread_limit(256)
     for (label face = 0; face < l.size(); face+=2)
     {
         const label nf = (l.size()-face) > 1 ? 2 : 1;
@@ -371,7 +372,7 @@ void Foam::lduMatrix::operator*=(const scalarField& sf)
 
         const label nFacesU = upper.size();
     #ifdef USE_OMP
-        #pragma omp target teams distribute parallel for if (target:nFacesU>10000)
+        #pragma omp target teams distribute parallel for if (nFacesU > THRESHOLD_LOW)
     #endif
         for (label face=0; face<nFacesU; face++)
         {
@@ -380,7 +381,7 @@ void Foam::lduMatrix::operator*=(const scalarField& sf)
 
         const label nFacesL = lower.size();
     #ifdef USE_OMP
-        #pragma omp target teams distribute parallel for if (target:nFacesL>10000)
+        #pragma omp target teams distribute parallel for if (nFacesL > THRESHOLD_LOW)
     #endif
         for (label face=0; face<nFacesL; face++)
         {

@@ -38,6 +38,7 @@ License
     #endif
 
 #include "AtomicAccumulator.H"
+#include "macros.H"
 #endif
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
@@ -69,7 +70,7 @@ Foam::DICPreconditioner::DICPreconditioner
     const solveScalar* __restrict__ diagPtr = diag.begin();
     solveScalar* __restrict__ rD_Ptr = rD_.begin();
 
-    #pragma omp target teams distribute parallel for if (target:loop_len>20000)
+    #pragma omp target teams distribute parallel for if (loop_len > THRESHOLD_HIGH)
     for (label i = 0; i < loop_len; ++i)
     {
         rD_Ptr[i] = diagPtr[i];
@@ -102,14 +103,14 @@ void Foam::DICPreconditioner::calcReciprocalD
     solveScalarField rD_temp(rD.size());
     solveScalar* __restrict__ rD_temp_Ptr = rD_temp.begin();
 
-    #pragma omp target teams distribute parallel for if (target:nCells>20000)
+    #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_HIGH)
     for (label cell=0; cell<nCells; cell++)
     {
         rD_temp_Ptr[cell] = 0.0;
     }
 
     // Calculate the sum[cell] += U[cell][j]*U[j][cell]/D[j]
-    #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+    #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW)
     for (label face=0; face<nFaces; face++)
     {
         atomicAccumulator(rD_temp_Ptr[uPtr[face]]) += upperPtr[face]*upperPtr[face]/rDPtr[lPtr[face]];
@@ -117,7 +118,7 @@ void Foam::DICPreconditioner::calcReciprocalD
 
     // Calculate the reciprocal of the preconditioned diagonal
     // inv_D [cell] = 1/(D[cell] - sum[cell])
-    #pragma omp target teams distribute parallel for if (target:nCells>20000)
+    #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_HIGH)
     for (label cell=0; cell<nCells; cell++)
     {
         rDPtr[cell] = 1.0/(rDPtr[cell] - rD_temp_Ptr[cell]);
@@ -163,20 +164,20 @@ void Foam::DICPreconditioner::precondition
     solveScalarField wA_temp(wA.size());
     solveScalar* __restrict__ wA_temp_Ptr = wA_temp.begin();
 
-    #pragma omp target teams distribute parallel for if (target:nCells>20000)
+    #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_HIGH)
     for (label cell=0; cell<nCells; cell++)
     {
         wAPtr[cell] = rDPtr[cell]*rAPtr[cell];
         wA_temp_Ptr[cell] = wAPtr[cell];
     }
 
-    #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+    #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW)
     for (label face=0; face<nFaces; face++)
     {
         atomicAccumulator(wA_temp_Ptr[uPtr[face]]) -= rDPtr[uPtr[face]]*upperPtr[face]*wAPtr[lPtr[face]];
     }
 
-    #pragma omp target teams distribute parallel for if (target:nFacesM1>10000)
+    #pragma omp target teams distribute parallel for if (nFacesM1 > THRESHOLD_LOW)
     for (label face=nFacesM1; face>=0; face--)
     {
         atomicAccumulator(wAPtr[lPtr[face]]) -= rDPtr[lPtr[face]]*upperPtr[face]*wA_temp_Ptr[uPtr[face]];

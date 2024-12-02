@@ -23,6 +23,7 @@ It is likely incomplete...
 - Gabriel Gerlero
 - Pawan Ghildiyal
 - Chris Greenshields
+- Leopold Grinberg
 - Bernhard Gschaider
 - Andrew Heather
 - David Hill
@@ -55,6 +56,7 @@ It is likely incomplete...
 - Prashant Sonakar
 - Hilary Spencer
 - Gavin Tabor
+- Suyash Tandon
 - Zeljko Tukovic
 - Eugene De Villiers
 - Louis Vittoz

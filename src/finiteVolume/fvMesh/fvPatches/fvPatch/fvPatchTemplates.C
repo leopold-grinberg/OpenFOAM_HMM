@@ -35,6 +35,8 @@ License
     #define OMP_UNIFIED_MEMORY_REQUIRED
     #pragma omp requires unified_shared_memory
     #endif
+
+#include "macros.H"
 #endif
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
@@ -52,7 +54,7 @@ void Foam::fvPatch::patchInternalField
     pfld.resize_nocopy(len);
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:len > 10000)
+    #pragma omp target teams distribute parallel for if (len > THRESHOLD_LOW)
 #endif
     for (label i = 0; i < len; ++i)
     {

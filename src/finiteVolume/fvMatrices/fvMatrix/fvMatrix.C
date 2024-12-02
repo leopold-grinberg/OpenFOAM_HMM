@@ -73,7 +73,7 @@ void Foam::fvMatrix<Type>::addToInternalField
     }
 #ifdef USE_OMP
     const label nFaces = addr.size();
-    #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+    #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW)
     for (label facei=0; facei<nFaces; ++facei)
     {
         atomicAccumulator(intf[addr[facei]]) += pf[facei];
@@ -119,7 +119,7 @@ void Foam::fvMatrix<Type>::subtractFromInternalField
     }
 #ifdef USE_OMP
     const label nFaces = addr.size();
-    #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+    #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW)
     for (label facei=0; facei<nFaces; ++facei)
     {
         atomicAccumulator(intf[addr[facei]])  -= pf[facei];
@@ -238,7 +238,7 @@ void Foam::fvMatrix<Type>::addBoundarySource
                     const labelUList& addr = lduAddr().patchAddr(patchi);
                 #ifdef USE_OMP
                     const label nFaces = addr.size();
-                    #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+                    #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW)
                     for (label facei=0; facei<nFaces; ++facei)
                     {
                         atomicAccumulator(source[addr[facei]]) +=
@@ -1180,7 +1180,7 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                 // off-diagonal contributions
             #ifdef USE_OMP
                 const label nFaces = pa.size();
-                #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+                #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW)
                 for (label face=0; face<nFaces; ++face)
                 {
                     atomicAccumulator(D[pa[face]]) += component(iCoeffs[face], 0);
@@ -1200,7 +1200,7 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                 // contribution to ensure stability
             #ifdef USE_OMP
                 const label nFaces = pa.size();
-                #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+                #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW)
                 for (label face=0; face<nFaces; ++face)
                 {
                     atomicAccumulator(D[pa[face]]) += cmptMax(cmptMag(iCoeffs[face]));
@@ -1270,7 +1270,7 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
     // Assumes that the central coefficient is positive and ensures it is
     const label nCells = D.size();
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:nCells>10000)
+    #pragma omp target teams distribute parallel for if (nCells > THRESHOLD_LOW)
 #endif
     for(label celli=0; celli<nCells; ++celli)
     {
@@ -1294,7 +1294,7 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
             {
             #ifdef USE_OMP
                 const label nFaces = pa.size();
-                #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+                #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW)
                 for(label face=0; face<nFaces; face++)
                 {
                     atomicAccumulator(D[pa[face]]) -= component(iCoeffs[face], 0);
@@ -1310,7 +1310,7 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
             {
             #ifdef USE_OMP
                 const label nFaces = pa.size();
-                #pragma omp target teams distribute parallel for if (target:nFaces>10000)
+                #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW)
                 for(label face=0; face<nFaces; face++)
                 {
                     atomicAccumulator(D[pa[face]]) -= cmptMin(iCoeffs[face]);

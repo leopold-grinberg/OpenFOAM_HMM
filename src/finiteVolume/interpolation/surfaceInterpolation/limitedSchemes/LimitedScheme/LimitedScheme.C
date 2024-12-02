@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2020 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -30,6 +31,16 @@ License
 #include "surfaceFields.H"
 #include "fvcGrad.H"
 #include "coupledFvPatchFields.H"
+
+#ifdef USE_OMP
+#include <omp.h>
+    #ifndef OMP_UNIFIED_MEMORY_REQUIRED
+    #define OMP_UNIFIED_MEMORY_REQUIRED
+    #pragma omp requires unified_shared_memory
+    #endif
+
+#include "macros.H"
+#endif
 
 // * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * * //
 
@@ -63,7 +74,10 @@ void Foam::LimitedScheme<Type, Limiter, LimitFunc>::calcLimiter
 
     scalarField& pLim = limiterField.primitiveFieldRef();
 
-    forAll(pLim, face)
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (pLim.size() > THRESHOLD_LOW)
+#endif
+    for (label face = 0; face < pLim.size(); ++face)
     {
         label own = owner[face];
         label nei = neighbour[face];
@@ -112,7 +126,10 @@ void Foam::LimitedScheme<Type, Limiter, LimitFunc>::calcLimiter
             // Build the d-vectors
             vectorField pd(CDweights.boundaryField()[patchi].patch().delta());
 
-            forAll(pLim, face)
+        #ifdef USE_OMP
+            #pragma omp target teams distribute parallel for if (pLim.size() > THRESHOLD_LOW)
+        #endif
+            for (label face = 0; face < pLim.size(); ++face)
             {
                 pLim[face] = Limiter::limiter
                 (

@@ -91,7 +91,7 @@ Foam::fv::gaussGrad<Type>::gradf
     const Field<Type>& issf = ssf;
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:owner.size()>10000) thread_limit(256)
+    #pragma omp target teams distribute parallel for if (owner.size() > THRESHOLD_LOW) thread_limit(256)
     for (label facei=0; facei<owner.size(); facei+=2)
     {
         const label nf = (owner.size() - facei) > 1 ? 2 : 1;
@@ -115,7 +115,7 @@ Foam::fv::gaussGrad<Type>::gradf
         const fvsPatchField<Type>& pssf = ssf.boundaryField()[patchi];
 
         label meshBoundaryPatchSize = mesh.boundary()[patchi].size();
-        #pragma omp target teams distribute parallel for if (target:meshBoundaryPatchSize>10000)
+        #pragma omp target teams distribute parallel for if (meshBoundaryPatchSize > THRESHOLD_LOW)
         for(label facei = 0; facei < meshBoundaryPatchSize; ++facei)
         {
             atomicAccumulator(igGrad[pFaceCells[facei]]) += pSf[facei]*pssf[facei];

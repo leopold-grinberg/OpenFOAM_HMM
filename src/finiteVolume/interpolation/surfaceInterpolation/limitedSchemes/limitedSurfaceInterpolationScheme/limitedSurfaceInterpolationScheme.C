@@ -38,6 +38,8 @@ License
     #define OMP_UNIFIED_MEMORY_REQUIRED
     #pragma omp requires unified_shared_memory
     #endif
+
+#include "macros.H"
 #endif
 
 // * * * * * * * * * * * * * * * * * Selectors * * * * * * * * * * * * * * * //
@@ -156,7 +158,7 @@ Foam::limitedSurfaceInterpolationScheme<Type>::weights
     scalarField& pWeights = Weights.primitiveFieldRef();
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:pWeights.size() > 10000)
+    #pragma omp target teams distribute parallel for if (pWeights.size() > THRESHOLD_LOW)
 #endif
     for (label face = 0; face < pWeights.size(); ++face)
     {
@@ -176,7 +178,7 @@ Foam::limitedSurfaceInterpolationScheme<Type>::weights
         const scalarField& pFaceFlux = faceFlux_.boundaryField()[patchi];
 
     #ifdef USE_OMP
-        #pragma omp target teams distribute parallel for if (target:pWeights.size() > 10000)
+        #pragma omp target teams distribute parallel for if (pWeights.size() > THRESHOLD_LOW)
     #endif 
         for (label face = 0; face < pWeights.size(); ++face)
         {

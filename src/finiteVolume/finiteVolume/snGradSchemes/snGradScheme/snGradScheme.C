@@ -39,6 +39,8 @@ License
     #define OMP_UNIFIED_MEMORY_REQUIRED
     #pragma omp requires unified_shared_memory
     #endif
+
+#include "macros.H"
 #endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -136,7 +138,7 @@ snGradScheme<Type>::snGrad
 
     const label nFaces = owner.size();
 #ifdef USE_OMP    
-    #pragma omp target teams distribute parallel for if (target:nFaces > 10000)
+    #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW)
 #endif
     for( label facei = 0; facei < nFaces; ++facei)
     {

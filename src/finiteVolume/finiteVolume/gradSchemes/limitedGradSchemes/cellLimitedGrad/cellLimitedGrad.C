@@ -51,7 +51,7 @@ void Foam::fv::cellLimitedGrad<Type, Limiter>::limitGradient
 ) const
 {
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if(target:gIf.size() > 20000)
+    #pragma omp target teams distribute parallel for if(gIf.size() > THRESHOLD_HIGH)
 #endif
     for (label celli=0; celli < gIf.size(); ++celli)
     {
@@ -151,7 +151,7 @@ Foam::fv::cellLimitedGrad<Type, Limiter>::calcGrad
     }
 
     label loop_len = maxVsf.size();
-    #pragma omp target teams distribute parallel for if(loop_len > 10000) thread_limit(256)
+    #pragma omp target teams distribute parallel for if(loop_len > THRESHOLD_LOW) thread_limit(256)
     for (label celli = 0; celli < loop_len; celli+=1)
     {
         const label *ptr_to_neighbour_list = &neighbour_list[offsets[celli]];
@@ -169,7 +169,7 @@ Foam::fv::cellLimitedGrad<Type, Limiter>::calcGrad
         minVsf[celli] = minVsf_celli;
     }
 
-    #pragma omp target teams distribute parallel for if(owner.size() > 10000) thread_limit(256)
+    #pragma omp target teams distribute parallel for if(owner.size() > THRESHOLD_LOW) thread_limit(256)
     for (label facei = 0; facei < owner.size(); facei += 2)
     {
         const label nf = (owner.size() - facei) > 1 ? 2 : 1;
@@ -215,7 +215,7 @@ Foam::fv::cellLimitedGrad<Type, Limiter>::calcGrad
         {
             const Field<Type> psfNei(psf.patchNeighbourField());
 
-            #pragma omp target teams distribute parallel for if (target:pOwner.size() > 10000)
+            #pragma omp target teams distribute parallel for if (pOwner.size() > THRESHOLD_LOW)
             for (label pFacei = 0; pFacei < pOwner.size(); ++pFacei)
             {
                 const label own = pOwner[pFacei];
@@ -237,7 +237,7 @@ Foam::fv::cellLimitedGrad<Type, Limiter>::calcGrad
         }
         else
         {
-            #pragma omp target teams distribute parallel for if (target:pOwner.size() > 10000)
+            #pragma omp target teams distribute parallel for if (pOwner.size() > THRESHOLD_LOW)
             for (label pFacei = 0; pFacei < pOwner.size(); ++pFacei)
             {
                 const label own = pOwner[pFacei];
@@ -325,7 +325,7 @@ Foam::fv::cellLimitedGrad<Type, Limiter>::calcGrad
     Field<Type> limiter(vsf.primitiveField().size(), pTraits<Type>::one);
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:owner.size()>20000)
+    #pragma omp target teams distribute parallel for if (owner.size() > THRESHOLD_HIGH)
 #endif
     for (label facei=0; facei<owner.size(); ++facei)
     {
@@ -357,7 +357,7 @@ Foam::fv::cellLimitedGrad<Type, Limiter>::calcGrad
         const vectorField& pCf = Cf.boundaryField()[patchi];
 
     #ifdef USE_OMP
-        #pragma omp target teams distribute parallel for if (target:pOwner.size()>20000)
+        #pragma omp target teams distribute parallel for if (pOwner.size() > THRESHOLD_HIGH)
     #endif
         for (label pFacei=0; pFacei<pOwner.size(); ++pFacei)
         {

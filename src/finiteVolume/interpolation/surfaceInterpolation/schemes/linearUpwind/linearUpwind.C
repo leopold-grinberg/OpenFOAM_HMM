@@ -35,6 +35,8 @@ License
     #define OMP_UNIFIED_MEMORY_REQUIRED
     #pragma omp requires unified_shared_memory
     #endif
+
+#include "macros.H"
 #endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -199,7 +201,7 @@ Foam::linearUpwind<Foam::vector>::correction
     tmp<volTensorField> tgradVf = gradScheme_().grad(vf, gradSchemeName_);
     const volTensorField& gradVf = tgradVf();
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:faceFlux.size() > 10000)
+    #pragma omp target teams distribute parallel for if (faceFlux.size() > THRESHOLD_LOW)
 #endif
     for (label facei = 0; facei < faceFlux.size(); ++facei)
     {
@@ -230,7 +232,7 @@ Foam::linearUpwind<Foam::vector>::correction
             vectorField pd(Cf.boundaryField()[patchi].patch().delta());
 
         #ifdef USE_OMP
-            #pragma omp target teams distribute parallel for if (target:pOwner.size() > 10000)
+            #pragma omp target teams distribute parallel for if (pOwner.size() > THRESHOLD_LOW)
         #endif
             for (label facei = 0; facei < pOwner.size(); ++facei)
             {

@@ -41,6 +41,8 @@ License
     #define OMP_UNIFIED_MEMORY_REQUIRED
     #pragma omp requires unified_shared_memory
     #endif
+
+#include "macros.H"
 #endif
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
@@ -255,7 +257,7 @@ Foam::solverPerformance Foam::fvMatrix<Foam::scalar>::solveSegregated
             const auto& psiInternal = this->psi(fieldi).primitiveField();
 
         #ifdef USE_OMP
-            #pragma omp target teams distribute parallel for if (target:psiInternal.size() > 10000)
+            #pragma omp target teams distribute parallel for if (psiInternal.size() > THRESHOLD_LOW)
         #endif
             for (label localCellI = 0; localCellI < psiInternal.size(); ++localCellI)
             {
@@ -289,7 +291,7 @@ Foam::solverPerformance Foam::fvMatrix<Foam::scalar>::solveSegregated
             const label cellOffset = lduMeshPtr()->cellOffsets()[fieldi];
 
         #ifdef USE_OMP
-            #pragma omp target teams distribute parallel for if (target:psiInternal.size() > 10000)
+            #pragma omp target teams distribute parallel for if (psiInternal.size() > THRESHOLD_LOW)
         #endif
             for (label localCellI = 0; localCellI < psiInternal.size(); ++localCellI)
             {

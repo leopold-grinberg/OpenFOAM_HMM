@@ -39,6 +39,8 @@ License
     #define OMP_UNIFIED_MEMORY_REQUIRED
     #pragma omp requires unified_shared_memory
     #endif
+
+#include "macros.H"
 #endif
 // * * * * * * * * * * * * * * * * * Selectors * * * * * * * * * * * * * * * //
 
@@ -177,7 +179,7 @@ Foam::surfaceInterpolationScheme<Type>::interpolate
     Field<Type>& sfi = sf.primitiveFieldRef();
 
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if(target:P.size() > 10000)
+    #pragma omp target teams distribute parallel for if(P.size() > THRESHOLD_LOW)
 #endif
     for (label fi=0; fi<P.size(); fi++)
     {
@@ -273,7 +275,7 @@ Foam::surfaceInterpolationScheme<Type>::dotInterpolate
 
     const typename SFType::Internal& Sfi = Sf.internalField();
 #ifdef USE_OMP
-    #pragma omp target teams distribute parallel for if (target:P.size() > 10000)
+    #pragma omp target teams distribute parallel for if (P.size() > THRESHOLD_LOW)
 #endif
     for (label fi=0; fi<P.size(); fi++)
     {

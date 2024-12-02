@@ -38,6 +38,7 @@ License
     #endif
 
 #include "AtomicAccumulator.H"
+#include "macros.H"
 #endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -68,7 +69,7 @@ void surfaceIntegrate
 
 #ifdef USE_OMP
     const label nFaces = owner.size();
-    #pragma omp target teams distribute parallel for if (target:nFaces > 20000)
+    #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW)
     for (label facei = 0; facei < nFaces; facei += 2)
     {
         label nF = (nFaces - facei) > 1 ? 2 : 1;
@@ -88,7 +89,7 @@ void surfaceIntegrate
         const fvsPatchField<Type>& pssf = ssf.boundaryField()[patchi];
 
         const label nFaces = mesh.boundary()[patchi].size();
-        #pragma omp target teams distribute parallel for if (target:nFaces > 20000)
+        #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW)
         for (label facei = 0; facei < nFaces; ++facei)
         {
             atomicAccumulator(ivf[pFaceCells[facei]]) += pssf[facei];
@@ -203,7 +204,7 @@ surfaceSum
 
 #ifdef USE_OMP
     const label nFaces = owner.size();
-    #pragma omp target teams distribute parallel for if (target:nFaces > 20000)
+    #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW)
     for (label facei = 0; facei < nFaces; facei += 2)
     {
         label nF = (nFaces - facei) > 1 ? 2 : 1;
@@ -223,7 +224,7 @@ surfaceSum
         const fvsPatchField<Type>& pssf = ssf.boundaryField()[patchi];
 
         const label nFaces = mesh.boundary()[patchi].size();
-        #pragma omp target teams distribute parallel for if (target:nFaces > 20000)
+        #pragma omp target teams distribute parallel for if (nFaces > THRESHOLD_LOW)
         for(label facei = 0; facei < nFaces; ++facei)
         {
             atomicAccumulator(vf[pFaceCells[facei]]) += pssf[facei];

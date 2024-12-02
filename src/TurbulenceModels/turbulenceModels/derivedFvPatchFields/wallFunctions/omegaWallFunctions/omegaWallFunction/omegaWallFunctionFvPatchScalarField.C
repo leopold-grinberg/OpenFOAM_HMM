@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016, 2019 OpenFOAM Foundation
     Copyright (C) 2017-2023 OpenCFD Ltd.
+    Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -31,6 +32,17 @@ License
 #include "turbulenceModel.H"
 #include "fvMatrix.H"
 #include "addToRunTimeSelectionTable.H"
+
+#ifdef USE_OMP
+#include <omp.h>
+    #ifndef OMP_UNIFIED_MEMORY_REQUIRED
+    #define OMP_UNIFIED_MEMORY_REQUIRED
+    #pragma omp requires unified_shared_memory
+    #endif
+
+#include "AtomicAccumulator.H"
+#include "macros.H"
+#endif
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -237,6 +249,20 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
     {
         case blenderType::STEPWISE:
         {
+        #ifdef USE_OMP
+            #pragma omp target teams distribute parallel for if (faceCells.size() > THRESHOLD_LOW)
+            for (label facei=0; facei<faceCells.size(); facei++)
+            {
+                if (yPlus(facei) > yPlusLam)
+                {
+                    atomicAccumulator(omega0[faceCells[facei]]) += omegaLog(facei);
+                }
+                else
+                {
+                    atomicAccumulator(omega0[faceCells[facei]]) += omegaVis(facei);
+                }
+            }
+        #else    
             forAll(faceCells, facei)
             {
                 if (yPlus(facei) > yPlusLam)
@@ -248,11 +274,24 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
                     omega0[faceCells[facei]] += omegaVis(facei);
                 }
             }
+        #endif
             break;
         }
 
         case blenderType::BINOMIAL:
         {
+        #ifdef USE_OMP
+            #pragma omp target teams distribute parallel for if (faceCells.size() > THRESHOLD_LOW)
+            for (label facei=0; facei<faceCells.size(); facei++)
+            {
+                atomicAccumulator(omega0[faceCells[facei]]) +=
+                    pow
+                    (
+                        pow(omegaVis(facei), n_) + pow(omegaLog(facei), n_),
+                        scalar(1)/n_
+                    );
+            }
+        #else    
             forAll(faceCells, facei)
             {
                 omega0[faceCells[facei]] +=
@@ -262,22 +301,49 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
                         scalar(1)/n_
                     );
             }
+        #endif
             break;
         }
 
         case blenderType::MAX:
         {
+        #ifdef USE_OMP
+            #pragma omp target teams distribute parallel for if (faceCells.size() > THRESHOLD_LOW)
+            for (label facei=0; facei<faceCells.size(); facei++)
+            {
+                // (PH:Eq. 27)
+                atomicAccumulator(omega0[faceCells[facei]]) +=
+                    max(omegaVis(facei), omegaLog(facei));
+            }
+        #else
             forAll(faceCells, facei)
             {
                 // (PH:Eq. 27)
                 omega0[faceCells[facei]] +=
                     max(omegaVis(facei), omegaLog(facei));
             }
+        #endif
             break;
         }
 
         case blenderType::EXPONENTIAL:
         {
+        #ifdef USE_OMP
+            #pragma omp target teams distribute parallel for if (faceCells.size() > THRESHOLD_LOW)
+            for (label facei=0; facei<faceCells.size(); facei++)
+            {
+                // (PH:Eq. 31)
+                const scalar yPlusFace = yPlus(facei);
+                const scalar Gamma = 0.01*pow4(yPlusFace)/(1 + 5*yPlusFace);
+                const scalar invGamma = scalar(1)/(Gamma + ROOTVSMALL);
+
+                atomicAccumulator(omega0[faceCells[facei]]) +=
+                (
+                    omegaVis(facei)*exp(-Gamma)
+                  + omegaLog(facei)*exp(-invGamma)
+                );
+            }
+        #else    
             forAll(faceCells, facei)
             {
                 // (PH:Eq. 31)
@@ -291,11 +357,31 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
                   + omegaLog(facei)*exp(-invGamma)
                 );
             }
+        #endif
             break;
         }
 
         case blenderType::TANH:
         {
+        #ifdef USE_OMP
+            #pragma omp target teams distribute parallel for if (faceCells.size() > THRESHOLD_LOW)
+            for (label facei=0; facei<faceCells.size(); facei++)
+            {
+                // (KAS:Eqs. 33-34)
+                const scalar omegaVisFace = omegaVis(facei);
+                const scalar omegaLogFace = omegaLog(facei);
+                const scalar b1 = omegaVisFace + omegaLogFace;
+                const scalar b2 =
+                    pow
+                    (
+                        pow(omegaVisFace, 1.2) + pow(omegaLogFace, 1.2),
+                        1.0/1.2
+                    );
+                const scalar phiTanh = tanh(pow4(0.1*yPlus(facei)));
+
+                atomicAccumulator(omega0[faceCells[facei]]) += phiTanh*b1 + (1 - phiTanh)*b2;
+            }
+        #else   
             forAll(faceCells, facei)
             {
                 // (KAS:Eqs. 33-34)
@@ -312,6 +398,7 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
 
                 omega0[faceCells[facei]] += phiTanh*b1 + (1 - phiTanh)*b2;
             }
+        #endif
             break;
         }
     }
@@ -319,6 +406,21 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
     const fvPatchVectorField& Uw = turbModel.U().boundaryField()[patchi];
     const scalarField magGradUw(mag(Uw.snGrad()));
 
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (faceCells.size() > THRESHOLD_LOW)
+    for (label facei=0; facei<faceCells.size(); facei++)
+    {
+        if (!(blender_ == blenderType::STEPWISE) || yPlus(facei) > yPlusLam)
+        {
+            atomicAccumulator(G0[faceCells[facei]]) +=
+                cornerWeights[facei]
+               *(nutw[facei] + nuw[facei])
+               *magGradUw[facei]
+               *Cmu25*sqrt(k[faceCells[facei]])
+               /(kappa*y[facei]);
+        }
+    }
+#else    
     forAll(faceCells, facei)
     {
         if (!(blender_ == blenderType::STEPWISE) || yPlus(facei) > yPlusLam)
@@ -331,6 +433,7 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
                /(kappa*y[facei]);
         }
     }
+#endif    
 }
 
 
@@ -515,9 +618,15 @@ void Foam::omegaWallFunctionFvPatchScalarField::updateCoeffs()
 
     FieldType& omega = const_cast<FieldType&>(internalField());
 
-    forAll(*this, facei)
+    auto patchFaceCells = patch().faceCells();
+
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (this->size() > THRESHOLD_LOW)
+#endif
+    for (label facei=0; facei < this->size(); facei++)
     {
-        const label celli = patch().faceCells()[facei];
+        // const label celli = patch().faceCells()[facei];
+        const label celli = patchFaceCells[facei];
 
         G[celli] = G0[celli];
         omega[celli] = omega0[celli];
@@ -565,14 +674,19 @@ void Foam::omegaWallFunctionFvPatchScalarField::updateWeightedCoeffs
 
     scalarField& omegaf = *this;
 
+    auto patchFaceCells = patch().faceCells();
+
     // only set the values if the weights are > tolerance
-    forAll(weights, facei)
+#ifdef USE_OMP
+    #pragma omp target teams distribute parallel for if (weights.size() > THRESHOLD_LOW)
+#endif
+    for (label facei=0; facei<weights.size(); facei++)
     {
         const scalar w = weights[facei];
 
         if (w > tolerance_)
         {
-            const label celli = patch().faceCells()[facei];
+            const label celli = patchFaceCells[facei];
 
             G[celli] = (1.0 - w)*G[celli] + w*G0[celli];
             omega[celli] = (1.0 - w)*omega[celli] + w*omega0[celli];

@@ -239,7 +239,7 @@ void magSqr
        TPARALLELFOR_ALL_F_OP_FUNC_F_ARITHMETIC(magType, res, =, magSqr, Foam::SymmTensor<double>, f)
     }
     else {
-       fprintf(stderr,"magSqr: magType = %s  Type = %s\n", typeid(magType).name(), typeid(Type).name());
+       // fprintf(stderr,"magSqr: magType = %s  Type = %s\n", typeid(magType).name(), typeid(Type).name());
        TFOR_ALL_F_OP_FUNC_F(magType, res, =, magSqr, Type, f)
     }
 
@@ -291,7 +291,7 @@ void mag
       TPARALLELFOR_ALL_F_OP_FUNC_F_ARITHMETIC(magType, res, =, mag, Type, f)
     }
     else {
-      fprintf(stderr,"mag: magType = %s  Type = %s\n", typeid(magType).name(), typeid(Type).name());	    
+      //fprintf(stderr,"mag: magType = %s  Type = %s\n", typeid(magType).name(), typeid(Type).name());	    
       TFOR_ALL_F_OP_FUNC_F(magType, res, =, mag, Type, f)
     }
 }

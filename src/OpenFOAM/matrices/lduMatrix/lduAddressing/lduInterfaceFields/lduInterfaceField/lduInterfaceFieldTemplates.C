@@ -58,7 +58,7 @@ void Foam::lduInterfaceField::addToInternalField
     {
         //forAll(faceCells, elemi)
 	const label loop_len = faceCells.size();
-        #pragma omp target teams distribute parallel for thread_limit(128)  if(loop_len>3000)
+        #pragma omp target teams distribute parallel for thread_limit(64)  if(loop_len>2000)
         for (label elemi = 0; elemi < loop_len; ++elemi)
         {
             atomicAccumulator(result[faceCells[elemi]]) += (coeffs[elemi]*vals[elemi]);
@@ -68,7 +68,7 @@ void Foam::lduInterfaceField::addToInternalField
     {
         //forAll(faceCells, elemi)
         const label loop_len = faceCells.size();
-        #pragma omp target teams distribute parallel for thread_limit(128) if(loop_len>3000)
+        #pragma omp target teams distribute parallel for thread_limit(64) if(loop_len>2000)
         for (label elemi = 0; elemi < loop_len; ++elemi)
         {
             atomicAccumulator(result[faceCells[elemi]]) -= (coeffs[elemi]*vals[elemi]);

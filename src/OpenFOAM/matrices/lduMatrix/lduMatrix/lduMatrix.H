@@ -92,6 +92,9 @@ class lduMatrix
         //- Coefficients (not including interfaces)
         scalarField *lowerPtr_, *diagPtr_, *upperPtr_;
 
+        #ifdef WITH_CSR
+        mutable scalarField *lower_CSR_Ptr_;
+        #endif
 
 public:
 
@@ -593,6 +596,9 @@ public:
             scalarField& lower();
             scalarField& diag();
             scalarField& upper();
+            #ifdef WITH_CSR
+            scalarField& lowerCSR();
+            #endif
 
             // Size with externally provided sizes (for constructing with 'fake'
             // mesh in GAMG)
@@ -600,11 +606,17 @@ public:
                 scalarField& lower(const label size);
                 scalarField& diag(const label nCoeffs);
                 scalarField& upper(const label nCoeffs);
+                //#ifdef WITH_CSR
+                //scalarField& lowerCSR(const label size);
+                //#endif
 
 
             const scalarField& lower() const;
             const scalarField& diag() const;
             const scalarField& upper() const;
+            #ifdef WITH_CSR
+            const scalarField& lowerCSR() const;
+            #endif
 
             bool hasDiag() const
             {
@@ -620,6 +632,16 @@ public:
             {
                 return (lowerPtr_);
             }
+            #ifdef WITH_CSR
+            bool hasLowerCSR() const
+            {
+                return (lower_CSR_Ptr_);
+            }
+            #endif
+
+            #ifdef WITH_CSR
+            void calc_lowerCSR() const;
+            #endif
 
             bool diagonal() const
             {

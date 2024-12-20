@@ -99,10 +99,33 @@ Foam::fv::gaussGrad<Type>::gradf
     Field<GradType>& igGrad = gGrad;
     const Field<Type>& issf = ssf;
 
-    label loop_len = owner.size();
-    //forAll(owner, facei)
-    //
 #if 1
+
+
+    #if 0
+    const auto& cells = mesh.cells();
+    const label nCells = igGrad.size();
+    #pragma omp target teams distribute parallel for thread_limit(256) if(nCells>5000 )
+    for (label celli = 0; celli < nCells; ++celli)
+        {
+
+            const auto& cFaces = cells[celli];
+            #pragma unroll 4
+            for (label f = 0; f < cFaces.size(); ++f)
+            {
+                const label facei = cFaces[f];
+                const label ownFacei = owner[facei];
+
+		if (celli == ownFacei)
+		  igGrad[celli] += Sf[facei]*issf[facei];		
+                else
+		  igGrad[celli] -= Sf[facei]*issf[facei]; 
+            }
+        }
+
+    #else
+
+    label loop_len = owner.size();
     #pragma omp target teams distribute parallel for  if(loop_len>10000 )
     for (label facei = 0; facei <  loop_len; facei+=2) 
     {
@@ -114,6 +137,7 @@ Foam::fv::gaussGrad<Type>::gradf
           atomicAccumulator(igGrad[neighbour[facei+i]]) -= Sfssf;
 	}
     }
+    #endif
 #else
 
 

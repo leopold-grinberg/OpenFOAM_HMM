@@ -93,6 +93,8 @@ Foam::lduPrimitiveProcessorInterface::interfaceInternalField
     auto tfld = tmp<labelField>::New(faceCells.size());
     auto& fld = tfld.ref();
 
+    fprintf(stderr,"Foam::lduPrimitiveProcessorInterface::interfaceInternalField file=%s, line=%d\n",__FILE__,__LINE__);
+
     forAll(faceCells, i)
     {
         fld[i] = internalData[faceCells[i]];

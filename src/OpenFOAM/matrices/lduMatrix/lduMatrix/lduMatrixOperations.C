@@ -99,6 +99,8 @@ void Foam::lduMatrix::negSumDiag()
 
     const label loop_len = l.size();
     //double t1=omp_get_wtime();
+    
+
     #pragma omp target teams distribute parallel for thread_limit(256) if (loop_len > 10000)
     for (label face=0; face<loop_len; face+=2)
     {
@@ -109,6 +111,7 @@ void Foam::lduMatrix::negSumDiag()
           atomicAccumulator(Diag[u[face+i]]) -= Upper[face+i];
 	}
     }
+
     //double t2 = omp_get_wtime();
     //fprintf(stderr,"rank = %d: negSumDiag:  nFaces = %d, ldu time = %g\n",Pstream::myProcNo(), loop_len, t2-t1);
 
@@ -134,18 +137,65 @@ void Foam::lduMatrix::sumMagOffDiag
     const labelUList& l = lduAddr().lowerAddr();
     const labelUList& u = lduAddr().upperAddr();
 
-    label loop_len = l.size();
+    const scalar* const __restrict__ upperPtr = (*this).upper().begin();
+    const scalar* const __restrict__ lowerPtr = (*this).lower().begin();
+
     //double t1=omp_get_wtime();
-    #pragma omp target teams distribute parallel for thread_limit(256) if (loop_len > 10000)
-    for (label face = 0; face < loop_len; face+=2)
-    {
-	const label nf = (loop_len-face) > 1 ? 2 : 1;
-        #pragma unroll 2
-        for ( label i = 0; i < nf; ++i){
-          atomicAccumulator(sumOff[u[face+i]]) += mag(Lower[face+i]);
-          atomicAccumulator(sumOff[l[face+i]]) += mag(Upper[face+i]);
-	}
-    }
+    
+    #ifdef WITH_CSR
+
+           const label nCells = sumOff.size();
+
+            const label* const __restrict__ L_offsets_CSR_Ptr =
+                              lduAddr().L_offsets_CSR().begin();
+
+            const scalarField& lower_CSR = (*this).lowerCSR();
+            const scalar* const __restrict__  lowerCSR_Ptr = lower_CSR.begin();
+            const label* const __restrict__ ownStartPtr =
+                              lduAddr().ownerStartAddr().begin();
+
+
+            #pragma omp target teams distribute parallel for if(nCells > 5000)
+            for (label celli=0; celli<nCells; celli++)
+            {
+              scalar tmp = 0.0;
+              const label fStart_L = L_offsets_CSR_Ptr[celli];
+              const label fEnd_L   = L_offsets_CSR_Ptr[celli+1];
+              const label fStart = ownStartPtr[celli];
+              const label fEnd   = ownStartPtr[celli + 1];
+
+              #pragma unroll 4
+              for (label facei = fStart_L; facei < fEnd_L; ++facei)
+              {
+                tmp += mag(lowerCSR_Ptr[facei]);
+              }
+
+              #pragma unroll 4
+              for (label facei=fStart; facei<fEnd; ++facei)
+              {
+                  tmp +=  mag(upperPtr[facei]);
+              }
+              sumOff[celli] += tmp;
+            }
+
+
+
+    #else
+    
+    
+       label loop_len = l.size();
+       #pragma omp target teams distribute parallel for thread_limit(256) if (loop_len > 10000)
+       for (label face = 0; face < loop_len; face+=2)
+       {
+   	   const label nf = (loop_len-face) > 1 ? 2 : 1;
+           #pragma unroll 2
+           for ( label i = 0; i < nf; ++i){
+             atomicAccumulator(sumOff[u[face+i]]) += mag(Lower[face+i]);
+             atomicAccumulator(sumOff[l[face+i]]) += mag(Upper[face+i]);
+	   }
+       }
+
+     #endif   
     //double t2 = omp_get_wtime();
     //fprintf(stderr,"rank = %d: sumMagOffDiag:  nFaces = %d, ldu time = %g\n",Pstream::myProcNo(), loop_len, t2-t1);
 

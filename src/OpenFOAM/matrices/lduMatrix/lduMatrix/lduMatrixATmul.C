@@ -194,12 +194,13 @@ void Foam::lduMatrix::Amul
 
 
 
-
+    #ifndef WITH_CSR  
     #pragma omp target teams distribute parallel for if(nCells>TARGET_CUT_OFF)
     for (label cell=0; cell<nCells; cell++)
     {
           ApsiPtr[cell] = diagPtr[cell]*psiPtr[cell];
     }
+    #endif
 
     #ifdef SAVE_LDU
     if (file_counter < 2){
@@ -293,22 +294,67 @@ void Foam::lduMatrix::Amul
       #endif
 
       #else 
-        #pragma omp target teams distribute parallel for thread_limit(64) if(nCells>TARGET_CUT_OFF)
-        for (label face=0; face<nFaces; face+=2)
-        {
 
-            const label nf = (nFaces-face) > 1 ? 2 : 1;
-            #pragma unroll 2
-            for ( label i = 0; i < nf; ++i){
-              const label l_val = lPtr[face+i] ;
-              const label u_val = uPtr[face+i];
 
-              #pragma omp atomic
-              ApsiPtr[u_val] += lowerPtr[face+i]*psiPtr[l_val];
-              #pragma omp atomic
-              ApsiPtr[l_val] += upperPtr[face+i]*psiPtr[u_val];
-            }
-        }
+         #ifdef WITH_CSR
+            const label* const __restrict__ L_J_CSR_Ptr =
+                              lduAddr().L_J_CSR().begin();
+
+            const label* const __restrict__ L_offsets_CSR_Ptr =
+                              lduAddr().L_offsets_CSR().begin();
+
+            const scalarField& lower_CSR = lowerCSR(); 
+            const scalar* const __restrict__  lowerCSR_Ptr = lower_CSR.begin();
+            const label NcellsL =  lduAddr().L_offsets_CSR().size()-1;
+            const label* const __restrict__ ownStartPtr =
+                              lduAddr().ownerStartAddr().begin();
+
+             
+            #pragma omp target teams distribute parallel for if(nCells > 5000)
+            for (label celli=0; celli<nCells; celli++)
+ 	    {
+              scalar tmp = 0.0; 
+              const label fStart_L = L_offsets_CSR_Ptr[celli]; 
+              const label fEnd_L   = L_offsets_CSR_Ptr[celli+1]; 
+              const label fStart = ownStartPtr[celli];
+              const label fEnd   = ownStartPtr[celli + 1];
+
+              #pragma unroll 4
+              for (label facei = fStart_L; facei < fEnd_L; ++facei)
+              {
+                tmp += lowerCSR_Ptr[facei] * psiPtr[L_J_CSR_Ptr[facei]];
+              }
+
+              #pragma unroll 4
+              for (label facei=fStart; facei<fEnd; ++facei)
+              {
+                  tmp +=  upperPtr[facei]*psiPtr[uPtr[facei]];
+              }
+              
+              ApsiPtr[celli] =  diagPtr[celli]*psiPtr[celli] + tmp; 
+	    }
+
+
+         #else    
+
+           #pragma omp target teams distribute parallel for thread_limit(256) if(nCells>TARGET_CUT_OFF)
+           for (label face=0; face<nFaces; face+=2)
+           {
+
+             const label nf = (nFaces-face) > 1 ? 2 : 1;
+             #pragma unroll 2
+             for ( label i = 0; i < nf; ++i){
+               const label l_val = lPtr[face+i] ;
+               const label u_val = uPtr[face+i];
+
+               #pragma omp atomic
+               ApsiPtr[u_val] += lowerPtr[face+i]*psiPtr[l_val];
+               #pragma omp atomic
+               ApsiPtr[l_val] += upperPtr[face+i]*psiPtr[u_val];
+             }
+           }
+         #endif
+
       #endif
 
     #endif 

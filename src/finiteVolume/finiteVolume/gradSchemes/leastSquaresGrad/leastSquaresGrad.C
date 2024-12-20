@@ -105,10 +105,11 @@ Foam::fv::leastSquaresGrad<Type>::calcGrad
     const labelUList& own = mesh.owner();
     const labelUList& nei = mesh.neighbour();
 
-    
+
+    #if 0 
     //forAll(own, facei)
     label loop_len = own.size();
-    #pragma omp target teams distribute parallel for if(loop_len > 10000)
+    #pragma omp target teams distribute parallel for if(loop_len > 5000)
     for (label facei = 0; facei < loop_len; ++facei)
     {
         const label ownFacei = own[facei];
@@ -118,7 +119,90 @@ Foam::fv::leastSquaresGrad<Type>::calcGrad
         atomicAccumulator(lsGrad[ownFacei]) += ownLs[facei]*deltaVsf;
         atomicAccumulator(lsGrad[neiFacei]) -= neiLs[facei]*deltaVsf;
     }
+    #else
+    static label *offsets = NULL;
+    static label *face_list = NULL;
 
+    if (face_list == NULL){
+       fprintf(stderr, " GAUSS GRAD: setting up\n");
+
+       offsets = new  (std::align_val_t(256))  label[lsGrad.size()+1];
+       label *count = new (std::align_val_t(256))  label[lsGrad.size()];
+       
+       for (label i = 0; i < lsGrad.size(); ++i ) count[i] = 0;
+
+       for (label facei=0; facei < own.size(); ++facei)
+       {
+           const label ownFacei = own[facei];
+           const label neiFacei = nei[facei];
+           count[ownFacei]++;
+           count[neiFacei]++;
+       }
+
+       offsets[0] = 0;
+       for (label i = 0; i < lsGrad.size(); ++i ){
+         offsets[i+1] = offsets[i]+count[i];
+       }
+       face_list = new label[offsets[lsGrad.size()]];
+
+       for (label i = 0; i < lsGrad.size(); ++i ) count[i] = 0;
+
+        label *ptr_to_face_list, *ptr_to_face_sign;
+
+       for (label facei=0; facei < own.size(); ++facei){
+
+          const label ownFacei = own[facei];
+          const label neiFacei = nei[facei];
+
+          ptr_to_face_list = &face_list[ offsets[ownFacei] + count[ownFacei] ];
+          ptr_to_face_list[0] = facei;
+          count[ownFacei]++;
+
+          ptr_to_face_list = &face_list[ offsets[neiFacei] + count[neiFacei] ];
+          ptr_to_face_list[0] = facei;
+          count[neiFacei]++;
+       }
+       delete[] count;
+    }
+
+
+    #if 1
+    const auto& cells = mesh.cells();
+    const label nCells = cells.size();
+    #pragma omp target teams distribute parallel for thread_limit(256) if(nCells>5000 )
+    for (label celli = 0; celli < nCells; ++celli)
+        {
+         
+            const auto& cFaces = cells[celli];
+            #pragma unroll 4
+            for (label f = 0; f < cFaces.size(); ++f) 
+            {
+                const label facei = cFaces[f];
+                const label ownFacei = own[facei];
+                const label neiFacei = nei[facei];
+                lsGrad[celli] += (ownLs[facei] - neiLs[facei])*(vsf[neiFacei] - vsf[ownFacei]);
+            }
+        }
+    #else
+
+    const label nCells = lsGrad.size();
+    #pragma omp target teams distribute parallel for thread_limit(256) if(nCells>5000 )
+    for (label celli = 0; celli < nCells; ++celli){
+
+        const label *ptr_to_face_list = &face_list[offsets[celli]];
+        const label nFaces = offsets[celli+1] - offsets[celli];
+
+        #pragma unroll 4
+        for ( label f = 0; f < nFaces; ++f){
+          const label facei = ptr_to_face_list[f];
+          const label ownFacei = own[facei];
+          const label neiFacei = nei[facei];
+          lsGrad[celli] += (ownLs[facei] - neiLs[facei])*(vsf[neiFacei] - vsf[ownFacei]);
+        }
+	}
+    #endif
+
+    #endif 
     // Boundary faces
     forAll(vsf.boundaryField(), patchi)
     {
@@ -136,7 +220,7 @@ Foam::fv::leastSquaresGrad<Type>::calcGrad
 
             //forAll(neiVsf, patchFacei)
 	    const label loop_len = neiVsf.size();
-            #pragma omp target teams distribute parallel for if(loop_len > 10000)
+            #pragma omp target teams distribute parallel for if(loop_len > 5000)
             for (label patchFacei = 0; patchFacei < loop_len; ++patchFacei)	    
             {
                  atomicAccumulator(lsGrad[faceCells[patchFacei]]) +=
@@ -150,7 +234,7 @@ Foam::fv::leastSquaresGrad<Type>::calcGrad
 
             //forAll(patchVsf, patchFacei)
             const label loop_len = patchVsf.size();
-            #pragma omp target teams distribute parallel for if(loop_len > 10000)
+            #pragma omp target teams distribute parallel for if(loop_len > 5000)
             for (label patchFacei = 0; patchFacei < loop_len; ++patchFacei)
             {
                  atomicAccumulator(lsGrad[faceCells[patchFacei]]) +=

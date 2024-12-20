@@ -48,6 +48,7 @@ License
     void * provide_umpire_pool(size_t N);
     void free_umpire_pool( void * data);
     bool is_umpire_pool_ptr(void *ptr);
+//#define USE_MEM_POOL
 #endif
 
 
@@ -80,48 +81,49 @@ void Foam::List<T>::doResize(const label len)
         // With sign-check to avoid spurious -Walloc-size-larger-than
         
 	
-    #ifdef USE_ROCTX
-	    if (len  > 5000){
-	        char roctx_name[128];
-	        sprintf(roctx_name,"resizing_%zu",sizeof(T)*len);
-            roctxRangePush(roctx_name);
-	    }
-    #endif
+        #ifdef USE_ROCTX
+	if (len  > 5000){
+	  char roctx_name[128];
+	  sprintf(roctx_name,"resizing_%zu",sizeof(T)*len);
+          roctxRangePush(roctx_name);
+	}
+        #endif
         
         T *nv;
 
 	   //fprintf(stderr,"doResize: calling mem allocator len = %d\n",len);
 
-	#ifdef USE_MEM_POOL
+	   #ifdef USE_MEM_POOL
 
-	    if (len >= 5000 /* && is_contiguous<T>::value*/ ){
-	        void * tmp_ptr = provide_umpire_pool(sizeof(T)*len);
-            nv = new (tmp_ptr) T[len]; //use placement new	    
-	    }
-	    else {
-		    size_t alignement = 16;
-            size_t bytes_needed = sizeof(T)*len;
-            if (bytes_needed > 2*100){ //LG1 AMD
-                alignement = 256;       //LG1 AMD
-            }
-            nv = new (std::align_val_t( alignement)) T[len];
-	    }
-    #else
-        size_t alignement = 16;
-        size_t bytes_needed = sizeof(T)*len;
-        if (bytes_needed > 2*100){ //LG1 AMD
-            alignement = 256;       //LG1 AMD
-        }
-        nv = new (std::align_val_t( alignement)) T[len];
-    #endif
-	    //if (nv == NULL) fprintf(stderr,"nv is NULL\n");
+	   if (len >= 5000 /* && is_contiguous<T>::value*/ ){
+	       void * tmp_ptr = provide_umpire_pool(sizeof(T)*len);
+               nv = new (tmp_ptr) T[len]; //use placement new	    
+	   }
+	   else {
+		size_t alignement = 16;
+                size_t bytes_needed = sizeof(T)*len;
+                if (bytes_needed > 2*100){ //LG1 AMD
+                   alignement = 256;       //LG1 AMD
+                }
+                nv = new (std::align_val_t( alignement)) T[len];
+	   }
+           #else
+                size_t alignement = 16;
+                size_t bytes_needed = sizeof(T)*len;
+                if (bytes_needed > 2*100){ //LG1 AMD
+                   alignement = 256;       //LG1 AMD
+                }
+                nv = new (std::align_val_t( alignement)) T[len];
+
+           #endif
+	   //if (nv == NULL) fprintf(stderr,"nv is NULL\n");
 
 
-    #ifdef USE_ROCTX
-	    if (len  > 5000){
+        #ifdef USE_ROCTX
+	if (len  > 5000){
            roctxRangePop();
         }
-    #endif
+        #endif
 
 
         const label overlap = Foam::min(this->size_, len);
@@ -333,6 +335,10 @@ Foam::List<T>::List(const UList<T>& a)
 
     if (len)
     {
+        #ifdef USE_ROCTX
+        roctxRangePush("List::List(UList)");
+        #endif
+
         doAlloc();
 
         #ifdef USEMEMCPY
@@ -348,11 +354,28 @@ Foam::List<T>::List(const UList<T>& a)
         {
             List_ACCESS(T, (*this), vp);
             List_CONST_ACCESS(T, a, ap);
-            for (label i = 0; i < len; ++i)
-            {
+
+	    if constexpr ( std::is_same<T,scalar>() || std::is_same<T,int>() || std::is_same<T,unsigned int>() || std::is_same<T,Foam::Vector<scalar>>() 
+			    || std::is_same<T,Foam::Tensor<scalar>>() ) {
+              #pragma omp target teams distribute parallel for if(len > 1000) thread_limit(256)
+              for (label i = 0; i < len; ++i)
+	      {
                 vp[i] = ap[i];
-            }
+	      }
+	    }
+	    else
+	    {
+	      if (len > 200) fprintf(stderr,"in List<%s>::List(const UList<%s>\n",typeid(T).name(),typeid(T).name());
+              for (label i = 0; i < len; ++i)
+              {
+                  vp[i] = ap[i];
+              }
+	    }
         }
+
+	#ifdef USE_ROCTX
+        roctxRangePop();
+        #endif
     }
 }
 

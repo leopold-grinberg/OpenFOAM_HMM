@@ -40,6 +40,11 @@ void Foam::lduMatrix::initMatrixInterfaces
     const direction cmpt
 ) const
 {
+
+    #ifdef USE_ROCTX
+    roctxRangePush("lduMatrix::initMatrixInterfaces");
+    #endif
+
     if
     (
         Pstream::defaultCommsType == Pstream::commsTypes::blocking
@@ -100,6 +105,11 @@ void Foam::lduMatrix::initMatrixInterfaces
             << Pstream::commsTypeNames[Pstream::defaultCommsType]
             << exit(FatalError);
     }
+
+    #ifdef USE_ROCTX
+    roctxRangePop();
+    #endif
+
 }
 
 

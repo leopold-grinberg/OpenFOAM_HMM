@@ -340,7 +340,7 @@ void Foam::processorFvPatchField<Type>::initInterfaceMatrixUpdate
     scalarSendBuf_.setSize(this->patch().size());
     //forAll(scalarSendBuf_, facei)
     const label loop_len = scalarSendBuf_.size();
-    #pragma omp target teams distribute parallel for if(loop_len>2000) thread_limit(256)
+    #pragma omp target teams distribute parallel for if(loop_len>1000) thread_limit(128)
     for (label facei=0; facei < loop_len; ++facei)
     {
         scalarSendBuf_[facei] = psiInternal[faceCells[facei]];

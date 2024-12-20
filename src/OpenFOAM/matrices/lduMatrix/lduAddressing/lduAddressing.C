@@ -217,12 +217,54 @@ const Foam::labelUList& Foam::lduAddressing::losortStartAddr() const
     return *losortStartPtr_;
 }
 
+#ifdef WITH_CSR
+const Foam::labelUList& Foam::lduAddressing::L_J_CSR() const
+{
+    if (!L_J_CSR_Ptr_)
+    {
+	fprintf(stderr, " in duAddressing::L_J_CSR calling calc_L_CSR\n");
+        calc_L_CSR(); //L_offsets_CSR_Ptr_ and L_J_CSR_Ptr_ are calculated in the same function
+    }
+
+    return *L_J_CSR_Ptr_;
+}
+
+const Foam::labelUList& Foam::lduAddressing::L_offsets_CSR() const
+{
+    if (!L_offsets_CSR_Ptr_)
+    {
+	fprintf(stderr, " in duAddressing::L_offsets_CSR calling calc_L_CSR\n");     
+        calc_L_CSR(); //L_offsets_CSR_Ptr_ and L_J_CSR_Ptr_ are calculated in the same function
+    }
+
+    return *L_offsets_CSR_Ptr_;
+}
+
+const Foam::labelUList& Foam::lduAddressing::L_inrow_offsets_CSR() const
+{
+    if (!L_offsets_CSR_Ptr_)
+    {
+ 	    fprintf(stderr, " in duAddressing::L_inrow_offsets_CSR calling calc_L_CSR\n");     
+        calc_L_CSR(); //L_offsets_CSR_Ptr_ and L_J_CSR_Ptr_ are calculated in the same function
+    }
+
+    return *L_inrow_offsets_CSR_Ptr_;
+}
+
+#endif
+
+
 
 void Foam::lduAddressing::clearOut()
 {
     deleteDemandDrivenData(losortPtr_);
     deleteDemandDrivenData(ownerStartPtr_);
     deleteDemandDrivenData(losortStartPtr_);
+    #ifdef WITH_CSR
+    deleteDemandDrivenData(L_offsets_CSR_Ptr_);
+    deleteDemandDrivenData(L_J_CSR_Ptr_);
+    deleteDemandDrivenData(L_inrow_offsets_CSR_Ptr_);
+    #endif
 }
 
 
@@ -285,6 +327,91 @@ Foam::Tuple2<Foam::label, Foam::scalar> Foam::lduAddressing::band() const
 
     return Tuple2<label, scalar>(bandwidth, profile);
 }
+
+
+#ifdef WITH_CSR
+void Foam::lduAddressing::calc_L_CSR() const
+{
+
+    fprintf(stderr,"in calc_L_CSR line=%d\n",__LINE__);
+
+    const label* __restrict__ uPtr = upperAddr().begin();	
+    const label* __restrict__ lPtr = lowerAddr().begin();
+    const label nFaces = lowerAddr().size(); //check if this is correct
+
+    fprintf(stderr,"in calc_L_CSR line=%d\n",__LINE__);
+
+    //temporary array	
+    labelList nnz_per_row_L(nFaces, 0);
+
+    //label *nnz_per_row_L_Ptr = nnz_per_row_L.begin();
+
+
+    for (label face=0; face < nFaces; face++) nnz_per_row_L[face] = 0; //likely not needed due to List creation
+
+    for (label face=0; face < nFaces; face++) nnz_per_row_L [ uPtr[face] ]++;
+
+    //find MAX nnz_per_row
+    label max_nnz_per_row=0;
+    for (label cell=0; cell < size(); ++cell){
+       max_nnz_per_row = nnz_per_row_L[cell] >  max_nnz_per_row  ?  nnz_per_row_L[cell] : max_nnz_per_row ;  
+    }
+
+    fprintf(stderr," max_nnz_per_row = %d\n",max_nnz_per_row);
+
+    #if 0
+    //number of sparse rows:
+    label ncells_L = 0; //should we keep ncells_L as a parameter or retrive it from L_offsets_CSR_Ptr_.size()-1   ?
+
+    //find last row with non zero values
+    for (label face=nFaces-1; face >=0; face--){
+         if (nnz_per_row_L[face] > 0) {
+            ncells_L = face+1;
+            break;
+         }
+    }
+    if (ncells_L != size() ){
+       fprintf(stderr,"in calc_L_CSR line=%d ncells_L = %d size() = %d  \n",__LINE__, ncells_L, size());
+    }
+    #else
+    label ncells_L = size();
+
+    #endif
+
+    L_offsets_CSR_Ptr_ = new labelList(ncells_L+1, Zero); //no need to initialize , but can we skip initialization ?
+    labelList& offsets = *L_offsets_CSR_Ptr_;
+
+    L_inrow_offsets_CSR_Ptr_ = new labelList(nFaces, Zero); //no need to initialize , but can we skip initialization ?
+    labelList& inrow_offsets = *L_inrow_offsets_CSR_Ptr_;
+    
+
+
+    //calculate offsets to sparse rows
+    offsets[0] = 0;
+    for (label cell=1; cell <= ncells_L; ++cell){
+        offsets[cell] =  offsets[cell-1] +  nnz_per_row_L[cell-1];
+    }
+
+    //reset nnz 
+    for (label face=0; face < nFaces; face++) nnz_per_row_L[face] = 0;
+
+    L_J_CSR_Ptr_ = new labelList(nFaces, Zero); //no need to initialize , but can we skip initialization ?
+    labelList& ljcsr = *L_J_CSR_Ptr_;
+
+    //save column indices  in CSR format
+    for (label face=0; face < nFaces; face++){
+
+       label cell = uPtr[face];
+       ljcsr[ offsets[ cell] + nnz_per_row_L[cell] ] = lPtr[face];
+       inrow_offsets[face] = nnz_per_row_L[cell]; 
+       nnz_per_row_L [ cell ]++;
+   }
+  
+}
+#endif
+
+
+
 
 
 // ************************************************************************* //

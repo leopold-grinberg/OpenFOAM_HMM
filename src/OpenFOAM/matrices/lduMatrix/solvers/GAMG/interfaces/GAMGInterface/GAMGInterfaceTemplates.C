@@ -52,6 +52,8 @@ Foam::tmp<Foam::Field<Type>> Foam::GAMGInterface::interfaceInternalField
     auto tresult = tmp<Field<Type>>::New(faceCells.size());
     auto& result = tresult.ref();
 
+    fprintf(stderr,"Foam::GAMGInterface::interfaceInternalField file=%s line=%d\n",__FILE__,__LINE__);
+
     forAll(result, elemi)
     {
         result[elemi] = iF[faceCells[elemi]];
@@ -69,7 +71,12 @@ void Foam::GAMGInterface::interfaceInternalField
 {
     result.resize(size());
 
-    forAll(result, elemi)
+    //fprintf(stderr,"Foam::GAMGInterface::interfaceInternalField file=%s line=%d\n",__FILE__,__LINE__);
+
+    //forAll(result, elemi)
+    const label loop_len = result.size();
+    #pragma omp target teams distribute parallel for if(loop_len > 2000) thread_limit(128)
+    for (label elemi = 0; elemi < loop_len; ++elemi)   
     {
         result[elemi] = iF[faceCells_[elemi]];
     }

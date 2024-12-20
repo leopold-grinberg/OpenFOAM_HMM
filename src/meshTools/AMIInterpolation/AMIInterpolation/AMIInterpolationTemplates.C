@@ -123,7 +123,7 @@ if constexpr ( std::is_same_v<Type,Foam::Vector<scalar>> ){
 
         const label loop_len = result.size();
 
-        #pragma omp target teams distribute parellel for if(loop_len > 5000) 
+        #pragma omp target teams distribute parallel for if(loop_len > 2000) 
         for (label facei = 0; facei < loop_len; ++facei)
         {
             if (tgtWeightsSum_[facei] < lowWeightCorrection_)
@@ -153,7 +153,7 @@ if constexpr ( std::is_same_v<Type,Foam::Vector<scalar>> ){
 else if constexpr ( std::is_same_v<Type,scalar> ){
 
         const label loop_len = result.size();
-        #pragma omp target teams distribute parellel for if(loop_len > 5000)
+        #pragma omp target teams distribute parallel for if(loop_len > 2000)
         for (label facei = 0; facei < loop_len; ++facei)
         {
             if (tgtWeightsSum_[facei] < lowWeightCorrection_)
@@ -286,7 +286,7 @@ void Foam::AMIInterpolation::interpolateToSource
 
         if constexpr ( std::is_same_v<Type,Foam::Vector<scalar>> ){
           const label loop_len = result.size();
-          #pragma omp target teams distribute parallel for thread_limit(64)  if (loop_len > 5000) 
+          #pragma omp target teams distribute parallel for thread_limit(64)  if (loop_len > 2000) 
           for (label facei = 0; facei < loop_len; ++facei)
           {
             if (srcWeightsSum_[facei] < lowWeightCorrection_)
@@ -314,7 +314,7 @@ void Foam::AMIInterpolation::interpolateToSource
         }
 	else if constexpr ( std::is_same_v<Type,scalar> ){
           const label loop_len = result.size();
-          #pragma omp target teams distribute parallel for thread_limit(64)  if (loop_len > 5000)
+          #pragma omp target teams distribute parallel for thread_limit(64)  if (loop_len > 2000)
           for (label facei = 0; facei < loop_len; ++facei)
           {
             if (srcWeightsSum_[facei] < lowWeightCorrection_)
@@ -346,7 +346,7 @@ void Foam::AMIInterpolation::interpolateToSource
 //	fprintf(stderr,"in file=%s in line=%d, 	typeid(Type).name()=%s\n",__FILE__, __LINE__, typeid(Type).name());
           //forAll(result, facei)
           const label loop_len = result.size();
-          #pragma omp parallel for if(loop_len > 500)
+          //#pragma omp parallel for if(loop_len > 500)
           for (label facei = 0; facei < loop_len; ++facei)
           {
             if (srcWeightsSum_[facei] < lowWeightCorrection_)

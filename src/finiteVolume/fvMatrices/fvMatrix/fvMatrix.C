@@ -276,11 +276,20 @@ void Foam::fvMatrix<Type>::setValuesFromList
     const ListType<Type>& values
 )
 {
+    #ifdef USE_ROCTX
+    roctxRangePush("fvMatrix::setValuesFromList");
+    #endif
+
     const fvMesh& mesh = psi_.mesh();
 
     const cellList& cells = mesh.cells();
     const labelUList& own = mesh.owner();
     const labelUList& nei = mesh.neighbour();
+    auto*  __restrict__ upperPtr = upper().begin();  
+    auto*  __restrict__ lowerPtr = lower().begin(); 
+    auto*  __restrict__  patchIDPtr     = mesh.boundaryMesh().patchID().begin();
+    //auto*  __restrict__ boundaryMeshPtr =  mesh.boundaryMesh().begin();
+    const auto& boundaryMeshPatches = mesh.boundaryMesh();
 
     scalarField& Diag = diag();
     Field<Type>& psi =
@@ -288,8 +297,12 @@ void Foam::fvMatrix<Type>::setValuesFromList
         <
             GeometricField<Type, fvPatchField, volMesh>&
         >(psi_).primitiveFieldRef();
+    //#pragma omp parallel for
+    //forAll(cellLabels, i)
 
-    forAll(cellLabels, i)
+    const label loop_len = cellLabels.size();
+    #pragma omp target teams distribute parallel for if(loop_len > 3000)
+    for (label i = 0; i < loop_len; ++i) 
     {
         const label celli = cellLabels[i];
         const Type& value = values[i];
@@ -307,38 +320,55 @@ void Foam::fvMatrix<Type>::setValuesFromList
                     {
                         if (celli == own[facei])
                         {
-                            source_[nei[facei]] -= upper()[facei]*value;
+                            atomicAccumulator(source_[nei[facei]]) -= upperPtr[facei]*value;
+			                //source_[nei[facei]] -= upper()[facei]*value;
                         }
                         else
                         {
-                            source_[own[facei]] -= upper()[facei]*value;
+                            atomicAccumulator(source_[own[facei]]) -= upperPtr[facei]*value;
+			                // source_[own[facei]] -= upper()[facei]*value;
                         }
 
-                        upper()[facei] = 0.0;
+                        //upper()[facei] = 0.0;
+                        upperPtr[facei] = 0.0; 
                     }
                     else
                     {
                         if (celli == own[facei])
                         {
-                            source_[nei[facei]] -= lower()[facei]*value;
+                            atomicAccumulator(source_[nei[facei]]) -= lowerPtr[facei]*value;
+			                //source_[nei[facei]] -= lower()[facei]*value;
                         }
                         else
                         {
-                            source_[own[facei]] -= upper()[facei]*value;
+                            atomicAccumulator(source_[own[facei]]) -= upperPtr[facei]*value;
+			                //source_[own[facei]] -= upper()[facei]*value;
                         }
 
-                        upper()[facei] = 0.0;
-                        lower()[facei] = 0.0;
+                        //upper()[facei] = 0.0;
+                        //lower()[facei] = 0.0;
+                        upperPtr[facei] = 0.0;
+                        lowerPtr[facei] = 0.0;
+
                     }
                 }
                 else
                 {
-                    const label patchi = mesh.boundaryMesh().whichPatch(facei);
+                    //const label patchi = mesh.boundaryMesh().whichPatch(facei);
+		            //const label patchi = mesh.boundaryMesh().patchID(facei);
+                    
+                    //const label patchi = mesh.boundaryMesh().patchID()[facei-mesh.nInternalFaces()];
+                    const label patchi = patchIDPtr[facei-mesh.nInternalFaces()];
+                     
+
 
                     if (internalCoeffs_[patchi].size())
                     {
+                        //const label patchFacei =
+                        //    mesh.boundaryMesh()[patchi].whichFace(facei);
+
                         const label patchFacei =
-                            mesh.boundaryMesh()[patchi].whichFace(facei);
+                             boundaryMeshPatches[patchi].whichFace(facei);    
 
                         internalCoeffs_[patchi][patchFacei] = Zero;
                         boundaryCoeffs_[patchi][patchFacei] = Zero;
@@ -347,6 +377,10 @@ void Foam::fvMatrix<Type>::setValuesFromList
             }
         }
     }
+
+    #ifdef USE_ROCTX
+    roctxRangePop();
+    #endif
 }
 
 
@@ -1193,7 +1227,7 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                 // off-diagonal contributions
                 //forAll(pa, face)
                 label loop_len = pa.size();
-                #pragma omp target teams distribute parallel for if(loop_len>10000)
+                #pragma omp target teams distribute parallel for if(loop_len>3000)
 		for (label face=0; face < loop_len; ++face)
                 {
 		    #pragma omp atomic	
@@ -1208,7 +1242,7 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                 // contribution to ensure stability
                 //forAll(pa, face)
 	        label loop_len = pa.size();
-		#pragma omp target teams distribute parallel for if(loop_len>10000)
+		#pragma omp target teams distribute parallel for if(loop_len>3000)
 		for (label face=0; face < loop_len; ++face)
                 {
 		    #pragma omp atomic
@@ -1275,7 +1309,7 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
     // Assumes that the central coefficient is positive and ensures it is
     //forAll(D, celli)
     label loop_len = D.size();
-    #pragma omp target teams distribute parallel for if(loop_len > 10000) 
+    #pragma omp target teams distribute parallel for if(loop_len > 3000) 
     for (label celli = 0; celli < loop_len; ++celli)
     {
         D[celli] = max(mag(D[celli]), sumOff[celli]);
@@ -1302,7 +1336,7 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
             {
                 //forAll(pa, face)
 	        label loop_len = pa.size();
-                #pragma omp target teams distribute parallel for if(loop_len>10000)
+                #pragma omp target teams distribute parallel for if(loop_len>3000)
                 for (label face=0; face < loop_len; ++face)
                 {
 		    #pragma omp atomic	
@@ -1313,7 +1347,7 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
             {
                 //forAll(pa, face)
                 label loop_len = pa.size();
-                #pragma omp target teams distribute parallel for if(loop_len>10000)
+                #pragma omp target teams distribute parallel for if(loop_len>3000)
                 for (label face=0; face < loop_len; ++face)
                 {
 		    #pragma omp atomic

@@ -131,6 +131,11 @@ class lduAddressing
         //- Losort start addressing
         mutable labelList* losortStartPtr_;
 
+        #ifdef WITH_CSR
+        mutable labelList* L_J_CSR_Ptr_;
+        mutable labelList* L_offsets_CSR_Ptr_;
+        mutable labelList* L_inrow_offsets_CSR_Ptr_; 
+        #endif
 
     // Private Member Functions
 
@@ -149,7 +154,9 @@ class lduAddressing
         //- Calculate losort start
         void calcLosortStart() const;
 
-
+        #ifdef WITH_CSR
+        void calc_L_CSR() const;
+        #endif
 public:
 
     //- Construct with size (number of equations)
@@ -158,7 +165,14 @@ public:
         size_(nEqns),
         losortPtr_(nullptr),
         ownerStartPtr_(nullptr),
+        #ifndef WITH_CSR
         losortStartPtr_(nullptr)
+        #else	
+	    losortStartPtr_(nullptr),
+        L_J_CSR_Ptr_(nullptr),
+	    L_offsets_CSR_Ptr_(nullptr),
+        L_inrow_offsets_CSR_Ptr_(nullptr)
+        #endif
     {}
 
 
@@ -206,6 +220,13 @@ public:
 
         //- Calculate bandwidth and profile of addressing
         Tuple2<label, scalar> band() const;
+
+ 	    #ifdef WITH_CSR
+        //- Return lower addressing in CSR format
+        const labelUList& L_J_CSR() const;
+        const labelUList& L_offsets_CSR() const;
+        const labelUList& L_inrow_offsets_CSR() const; 
+        #endif
 };
 
 

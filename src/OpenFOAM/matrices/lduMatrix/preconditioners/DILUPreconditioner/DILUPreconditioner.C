@@ -237,16 +237,56 @@ void Foam::DILUPreconditioner::precondition
         wAPtr[cell] = rDPtr[cell]*rAPtr[cell];
 	wA_temp_Ptr[cell] = wAPtr[cell];
     }
+    
+    #ifdef WITH_CSR
+            const label* const __restrict__ L_J_CSR_Ptr =
+                               solver_.matrix().lduAddr().L_J_CSR().begin();
 
-    //wA_temp = wA;
+            const label* const __restrict__ L_offsets_CSR_Ptr =
+                               solver_.matrix().lduAddr().L_offsets_CSR().begin();
+
+            const scalarField& lower_CSR =  solver_.matrix().lowerCSR();
+            const scalar* const __restrict__  lowerCSR_Ptr = lower_CSR.begin();
+            const label* const __restrict__ ownStartPtr =
+                               solver_.matrix().lduAddr().ownerStartAddr().begin();
+
+	    #pragma omp target teams distribute parallel for if(nCells > 5000)
+            for (label celli=0; celli<nCells; celli++)
+                {
+              scalar tmp = 0;
+              const label fStart_L = L_offsets_CSR_Ptr[celli];
+              const label fEnd_L   = L_offsets_CSR_Ptr[celli+1];
+              #pragma unroll 4
+              for (label facei = fStart_L; facei < fEnd_L; ++facei)
+              {
+                tmp += lowerCSR_Ptr[facei] * wAPtr[L_J_CSR_Ptr[facei]];
+              }
+              wA_temp_Ptr[celli] -=  rDPtr[celli] * tmp;
+            }
+            #pragma omp target teams distribute parallel for if(nCells > 5000)
+            for (label celli=0; celli<nCells; celli++)
+                 {
+              scalar tmp = 0;
+              const label fStart = ownStartPtr[celli];
+              const label fEnd   = ownStartPtr[celli + 1];
+              #pragma unroll 4
+              for (label facei=fStart; facei<fEnd; ++facei)
+              {
+                  tmp +=  upperPtr[facei]*wA_temp_Ptr[uPtr[facei]];
+              }
+              wAPtr[celli] -=  rDPtr[celli]*tmp;
+           }
+
+    #else
 
     #pragma omp target teams distribute parallel for if(nFaces>TARGET_CUT_OFF) 
     for (label face=0; face<nFaces; face++)
     {
         const label sface = losortPtr[face];
+	const label uptr_index = uPtr[sface];
         #pragma omp atomic
-        wA_temp_Ptr[uPtr[sface]] -=
-            rDPtr[uPtr[sface]]*lowerPtr[sface]*wAPtr[lPtr[sface]];
+        wA_temp_Ptr[uptr_index] -=
+            rDPtr[uptr_index]*lowerPtr[sface]*wAPtr[lPtr[sface]];
     }
 
     #pragma omp target teams distribute parallel for if(nFaces>TARGET_CUT_OFF)
@@ -257,6 +297,7 @@ void Foam::DILUPreconditioner::precondition
         wAPtr[lptr_index] -=
             rDPtr[lptr_index]*upperPtr[face]*wA_temp_Ptr[uPtr[face]];
     }
+    #endif
 
 #endif
 

@@ -99,6 +99,8 @@ void Foam::processorGAMGInterfaceField::initInterfaceMatrixUpdate
     const Pstream::commsTypes commsType
 ) const
 {
+    //fprintf(stderr," Foam::processorGAMGInterfaceField::initInterfaceMatrix line= %d\n",__LINE__);
+	    
     procInterface_.interfaceInternalField(psiInternal, scalarSendBuf_);
 
     if
@@ -152,10 +154,13 @@ void Foam::processorGAMGInterfaceField::updateInterfaceMatrix
     const Pstream::commsTypes commsType
 ) const
 {
+   	
     if (updatedMatrix())
     {
         return;
     }
+
+    //fprintf(stderr," Foam::processorGAMGInterfaceField::updateInterfaceMatrix line= %d\n",__LINE__);
 
     const labelUList& faceCells = lduAddr.patchAddr(patchId);
 

@@ -185,9 +185,10 @@ void Foam::lduCalculatedProcessorField<Type>::addToInternalField
         //forAll(faceCells, elemI)
         label loop_len = faceCells.size();
 	
-        #pragma omp target teams distribute parallel for if(loop_len > 10000)
+        #pragma omp target teams distribute parallel for if(loop_len > 3000) threadlimit(256)
 	for (label elemI = 0; elemI < loop_len; ++elemI)
         {
+	    #pragma omp atomic	
             result[faceCells[elemI]] += coeffs[elemI]*vals[elemI];
         }
     }
@@ -196,9 +197,10 @@ void Foam::lduCalculatedProcessorField<Type>::addToInternalField
         //forAll(faceCells, elemI)
         label loop_len = faceCells.size();
 	
-        #pragma omp target teams distribute parallel for if(loop_len > 10000)
+        #pragma omp target teams distribute parallel for if(loop_len > 3000) threadlimit(256)
         for (label elemI = 0; elemI < loop_len; ++elemI)
         {
+            #pragma omp atomic   		
             result[faceCells[elemI]] -= coeffs[elemI]*vals[elemI];
         }
     }

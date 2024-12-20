@@ -59,7 +59,10 @@ Foam::GAMGInterface::GAMGInterface
 
 void Foam::GAMGInterface::combine(const GAMGInterface& coarseGi)
 {
-    const labelList& coarseFra = coarseGi.faceRestrictAddressing_;
+
+    fprintf(stderr,"in combine line = %d\n",__LINE__);
+
+     const labelList& coarseFra = coarseGi.faceRestrictAddressing_;
 
     forAll(faceRestrictAddressing_, ffi)
     {
@@ -113,6 +116,8 @@ Foam::tmp<Foam::scalarField> Foam::GAMGInterface::agglomerateCoeffs
             << " coarse size:" << size()
             << abort(FatalError);
     }
+
+    fprintf(stderr,"in Foam::GAMGInterface::agglomerateCoeffs line = %d\n",__LINE__);
 
     forAll(faceRestrictAddressing_, ffi)
     {

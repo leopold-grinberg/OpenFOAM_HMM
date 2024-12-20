@@ -92,6 +92,11 @@ void Foam::GaussSeidelSmoother::smooth
     const label nSweeps
 )
 {
+
+    #ifdef USE_ROCTX
+    roctxRangePush("GaussSeidelSmoother::smooth");
+    #endif
+
     solveScalar* __restrict__ psiPtr = psi.begin();
 
     const label nCells = psi.size();
@@ -114,20 +119,25 @@ void Foam::GaussSeidelSmoother::smooth
     const label* const __restrict__ ownStartPtr =
         matrix_.lduAddr().ownerStartAddr().begin();
 
+    const label* const __restrict__ losortStartAddrPtr =
+         matrix_.lduAddr().losortStartAddr().begin();
 
-    // Parallel boundary initialisation.  The parallel boundary is treated
-    // as an effective jacobi interface in the boundary.
-    // Note: there is a change of sign in the coupled
-    // interface update.  The reason for this is that the
-    // internal coefficients are all located at the l.h.s. of
-    // the matrix whereas the "implicit" coefficients on the
-    // coupled boundaries are all created as if the
-    // coefficient contribution is of a source-kind (i.e. they
-    // have a sign as if they are on the r.h.s. of the matrix.
-    // To compensate for this, it is necessary to turn the
-    // sign of the contribution.
+    const label* const __restrict__ losortAddrPtr =
+         matrix_.lduAddr().losortAddr().begin();
 
-    for (label sweep=0; sweep<nSweeps; sweep++)
+        // Parallel boundary initialisation.  The parallel boundary is treated
+        // as an effective jacobi interface in the boundary.
+        // Note: there is a change of sign in the coupled
+        // interface update.  The reason for this is that the
+        // internal coefficients are all located at the l.h.s. of
+        // the matrix whereas the "implicit" coefficients on the
+        // coupled boundaries are all created as if the
+        // coefficient contribution is of a source-kind (i.e. they
+        // have a sign as if they are on the r.h.s. of the matrix.
+        // To compensate for this, it is necessary to turn the
+        // sign of the contribution.
+
+        for (label sweep = 0; sweep < nSweeps; sweep++)
     {
         bPrime = source;
 
@@ -156,7 +166,8 @@ void Foam::GaussSeidelSmoother::smooth
 
         solveScalar psii;
         label fStart;
-        label fEnd = ownStartPtr[0];
+        label fEnd;// = ownStartPtr[0];
+        label fStart_L, fEnd_L;
 
 #if 1
         //temporary field
@@ -164,7 +175,7 @@ void Foam::GaussSeidelSmoother::smooth
         solveScalarField R(psi.size()); //residual
 
         solveScalar* __restrict__ rhs_ptr = bPrime.begin();
-	solveScalar* __restrict__ r_ptr = R.begin();
+	    solveScalar* __restrict__ r_ptr = R.begin();
         solveScalar* __restrict__ u_ptr = psi.begin();
         solveScalar* __restrict__ z_ptr = Z.begin();
 
@@ -173,16 +184,53 @@ void Foam::GaussSeidelSmoother::smooth
 	const label USE_ZERO_ORDER = 0;
 
 	//use relax_weight = 1.0;
-        // 0) r = relax_weight * (RHS - A * u)
-	
-        #pragma omp target teams distribute parallel for if(nCells > 10000)
+    // 0) r = relax_weight * (RHS - A * u)
+    #ifdef WITH_CSR
+       const label* const __restrict__ L_J_CSR_Ptr =
+         matrix_.lduAddr().L_J_CSR().begin();
+
+       const label* const __restrict__ L_offsets_CSR_Ptr =
+         matrix_.lduAddr().L_offsets_CSR().begin();
+
+       const scalarField& lower_CSR = matrix_.lowerCSR(); 
+       const scalar* const __restrict__  lowerCSR_Ptr = lower_CSR.begin();
+       const label NcellsL =  matrix_.lduAddr().L_offsets_CSR().size()-1;
+
+
+
+        #pragma omp target teams distribute parallel for if(nCells > 3000) thread_limit(256)
+        for (label celli=0; celli<nCells; celli++)
+ 	    {
+              scalar tmp = 0.0; 
+              fStart_L = L_offsets_CSR_Ptr[celli]; 
+              fEnd_L   = L_offsets_CSR_Ptr[celli+1]; 
+              fStart = ownStartPtr[celli];
+              fEnd   = ownStartPtr[celli + 1];
+
+              #pragma unroll 2
+              for (label facei = fStart_L; facei < fEnd_L; ++facei)
+              {
+                tmp+= lowerCSR_Ptr[facei] * u_ptr[L_J_CSR_Ptr[facei]];
+              }
+
+              #pragma unroll 4
+              for (label facei=fStart; facei<fEnd; ++facei)
+              {
+                  tmp +=  upperPtr[facei]*u_ptr[uPtr[facei]];
+              }
+              //diagonal
+              r_ptr[celli] = diagPtr[celli]*u_ptr[celli] + tmp; 
+	    }
+
+    #else
+
+        #pragma omp target teams distribute parallel for if(nCells > 5000)
         for (label celli=0; celli<nCells; ++celli)
         {
           r_ptr[celli] = diagPtr[celli]*u_ptr[celli];
         }
 
-
-        #pragma omp target teams distribute parallel for if(nFaces > 10000) thread_limit(256)
+       #pragma omp target teams distribute parallel for if(nFaces > 5000) thread_limit(256)
         for (label face=0; face<nFaces; face+=2)
         {
             const label nf = (nFaces-face) > 1 ? 2 : 1;
@@ -196,7 +244,7 @@ void Foam::GaussSeidelSmoother::smooth
               r_ptr[l_val] += upperPtr[face+i]*u_ptr[u_val];
             }
         }
-
+    #endif 
 
 
 	if (1 == USE_ZERO_ORDER){
@@ -204,31 +252,31 @@ void Foam::GaussSeidelSmoother::smooth
 	   scalar relax_weight = 0.8;
 
             // 1) z = r/D, u = u + relax_weight * z
-           #pragma omp target teams distribute parallel for if(nCells > 10000)
+           #pragma omp target teams distribute parallel for if(nCells > 3000)
            for (label celli=0; celli<nCells; celli++)
            {
              scalar r = rhs_ptr[celli] - r_ptr[celli];
              u_ptr[celli] += relax_weight * r / diagPtr[celli];
            }
 	}
-        else{
+    else{
 
         // 1) z = r/D, u = u + z
-	#pragma omp target teams distribute parallel for if(nCells > 10000)
+	#pragma omp target teams distribute parallel for if(nCells > 3000)
         for (label celli=0; celli<nCells; celli++)
 	{
           scalar r = rhs_ptr[celli] - r_ptr[celli];
           z_ptr[celli] = r / diagPtr[celli];
-	  u_ptr[celli] += z_ptr[celli]; 
+  	      u_ptr[celli] += z_ptr[celli]; 
 	}
 
         scalar multiplier = -1.0;
-
-	for (label sweepID = 0; sweepID < 1; sweepID++)
+        const scalar max_sweeps = 1;
+	for (label sweepID = 0; sweepID < max_sweeps; sweepID++)
         {
             // 2) r = U * z
 
-	    #pragma omp target teams distribute parallel for if(nCells > 10000)
+	    #pragma omp target teams distribute parallel for if(nCells > 3000)
             for (label celli=0; celli<nCells; celli++)
 	    {
               fStart = ownStartPtr[celli];
@@ -244,18 +292,27 @@ void Foam::GaussSeidelSmoother::smooth
 	    }
 
 	    // 3) z = r/D, u = u + m * z
-	    #pragma omp target teams distribute parallel for if(nCells > 10000)
-	    for (label celli=0; celli<nCells; celli++)
-            {
+        if (sweepID < max_sweeps-1){
+	      #pragma omp target teams distribute parallel for if(nCells > 3000)
+	      for (label celli=0; celli<nCells; celli++)
+          {
               z_ptr[celli] = r_ptr[celli] / diagPtr[celli];
-	      u_ptr[celli] += multiplier * z_ptr[celli];
-	    }
+	          u_ptr[celli] += multiplier * z_ptr[celli];
+	      }
+        }
+        else{ //no need to save "Z"  
+	      #pragma omp target teams distribute parallel for if(nCells > 3000)
+	      for (label celli=0; celli<nCells; celli++)
+          {
+	          u_ptr[celli] += multiplier * r_ptr[celli] / diagPtr[celli];
+	      }
+        }  
 	    multiplier *= -1.0;
    	}
 	}
 
 #else
-
+        fEnd = ownStartPtr[0];
         for (label celli=0; celli<nCells; celli++)
         {
             // Start and end of this row
@@ -285,6 +342,11 @@ void Foam::GaussSeidelSmoother::smooth
 #endif
 
     }
+
+    #ifdef USE_ROCTX
+    roctxRangePop();
+    #endif
+
 }
 
 

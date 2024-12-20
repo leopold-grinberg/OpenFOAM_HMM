@@ -35,6 +35,9 @@ License
   #define OMP_UNIFIED_MEMORY_REQUIRED
   #endif
 
+  #ifdef USE_ROCTX
+  #include <roctracer/roctx.h>
+  #endif
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
@@ -71,7 +74,7 @@ void Foam::GAMGSolver::scale
     solveScalar scalingFactorNum = 0.0, scalingFactorDenom = 0.0;
    
 
-    #pragma omp target teams distribute parallel for reduction(+:scalingFactorNum, scalingFactorDenom) map(tofrom:scalingFactorNum,scalingFactorDenom) if(nCells>10000)
+    #pragma omp target teams distribute parallel for reduction(+:scalingFactorNum, scalingFactorDenom) map(tofrom:scalingFactorNum,scalingFactorDenom) if(nCells>3000)
     for (label i=0; i<nCells; i++)
     {
         scalingFactorNum += fieldPtr[i]*sourcePtr[i];
@@ -83,11 +86,19 @@ void Foam::GAMGSolver::scale
 
     A.mesh().reduce(scalingFactor, sumOp<solveScalar>());
 
+    #ifdef USE_ROCTX
+    roctxRangePush("GAMGSolver::scale_call2stabilise");
+    #endif
+
     const solveScalar sf =
     (
         scalingFactor[0]
       / stabilise(scalingFactor[1], pTraits<solveScalar>::vsmall)
     );
+
+    #ifdef USE_ROCTX
+    roctxRangePop();
+    #endif
 
     if (debug >= 2)
     {
@@ -97,7 +108,7 @@ void Foam::GAMGSolver::scale
     const scalarField& D = A.diag();
     const scalar* const __restrict__ DPtr = D.begin();
 
-      #pragma omp target teams distribute parallel for if(nCells>10000)
+      #pragma omp target teams distribute parallel for if(nCells>3000)
       for (label i=0; i<nCells; i++)
       {
         fieldPtr[i] = sf*fieldPtr[i] + (sourcePtr[i] - sf*AcfPtr[i])/DPtr[i];

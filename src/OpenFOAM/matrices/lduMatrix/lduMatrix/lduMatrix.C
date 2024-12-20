@@ -33,6 +33,10 @@ License
 #include "scalarIOField.H"
 #include "Time.H"
 
+#ifdef USE_ROCTX
+#include <roctracer/roctx.h>
+#endif
+
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
 namespace Foam
@@ -51,7 +55,12 @@ Foam::lduMatrix::lduMatrix(const lduMesh& mesh)
     lduMesh_(mesh),
     lowerPtr_(nullptr),
     diagPtr_(nullptr),
+    #ifndef WITH_CSR
     upperPtr_(nullptr)
+    #else 
+    upperPtr_(nullptr),
+    lower_CSR_Ptr_(nullptr)
+    #endif
 {}
 
 
@@ -60,7 +69,13 @@ Foam::lduMatrix::lduMatrix(const lduMatrix& A)
     lduMesh_(A.lduMesh_),
     lowerPtr_(nullptr),
     diagPtr_(nullptr),
+    #ifndef WITH_CSR 
     upperPtr_(nullptr)
+    #else
+    upperPtr_(nullptr),
+    lower_CSR_Ptr_(nullptr)
+    #endif
+
 {
     if (A.lowerPtr_)
     {
@@ -76,6 +91,12 @@ Foam::lduMatrix::lduMatrix(const lduMatrix& A)
     {
         upperPtr_ = new scalarField(*(A.upperPtr_));
     }
+    #ifdef WITH_CSR   
+    if (A.lower_CSR_Ptr_)
+    {
+        lower_CSR_Ptr_ = new scalarField(*(A.lower_CSR_Ptr_));
+    }
+    #endif
 }
 
 
@@ -84,7 +105,12 @@ Foam::lduMatrix::lduMatrix(lduMatrix& A, bool reuse)
     lduMesh_(A.lduMesh_),
     lowerPtr_(nullptr),
     diagPtr_(nullptr),
+    #ifndef WITH_CSR
     upperPtr_(nullptr)
+    #else
+    upperPtr_(nullptr),
+    lower_CSR_Ptr_(nullptr)
+    #endif
 {
     if (reuse)
     {
@@ -105,6 +131,14 @@ Foam::lduMatrix::lduMatrix(lduMatrix& A, bool reuse)
             upperPtr_ = A.upperPtr_;
             A.upperPtr_ = nullptr;
         }
+        #ifdef WITH_CSR
+        if (A.lower_CSR_Ptr_)
+        {
+            lower_CSR_Ptr_ = A.lower_CSR_Ptr_;
+            A.lower_CSR_Ptr_ = nullptr;
+        }
+        #endif
+
     }
     else
     {
@@ -122,6 +156,13 @@ Foam::lduMatrix::lduMatrix(lduMatrix& A, bool reuse)
         {
             upperPtr_ = new scalarField(*(A.upperPtr_));
         }
+        #ifdef WITH_CSR    
+        if (A.lower_CSR_Ptr_)
+        {
+            lower_CSR_Ptr_ = new scalarField(*(A.lower_CSR_Ptr_));
+        }
+        #endif
+
     }
 }
 
@@ -131,11 +172,19 @@ Foam::lduMatrix::lduMatrix(const lduMesh& mesh, Istream& is)
     lduMesh_(mesh),
     lowerPtr_(nullptr),
     diagPtr_(nullptr),
+    #ifndef WITH_CSR
     upperPtr_(nullptr)
+    #else
+    upperPtr_(nullptr),
+    lower_CSR_Ptr_(nullptr)
+    #endif
 {
     Switch hasLow(is);
     Switch hasDiag(is);
     Switch hasUp(is);
+    #ifdef WITH_CSR
+    Switch hasLowCSR(is);
+    #endif
 
     if (hasLow)
     {
@@ -149,6 +198,12 @@ Foam::lduMatrix::lduMatrix(const lduMesh& mesh, Istream& is)
     {
         upperPtr_ = new scalarField(is);
     }
+    #ifdef WITH_CSR
+    if (hasLowCSR)
+    {
+        lower_CSR_Ptr_ = new scalarField(is);
+    }
+    #endif
 }
 
 
@@ -168,6 +223,13 @@ Foam::lduMatrix::~lduMatrix()
     {
         delete upperPtr_;
     }
+
+    #ifdef WITH_CSR
+    if (lower_CSR_Ptr_)
+    {
+        delete lower_CSR_Ptr_;
+    }
+    #endif
 }
 
 
@@ -188,6 +250,22 @@ Foam::scalarField& Foam::lduMatrix::lower()
     return *lowerPtr_;
 }
 
+//#ifdef WITH_CSR
+//Foam::scalarField& Foam::lduMatrix::lowerCSR()
+//{
+//    if (!lower_CSR_Ptr_)
+//    {
+//        {
+//            //sieze of lower_CSR_Ptr is the same as lowerPtr_
+//            fprintf(stderr,"in Foam::lduMatrix::lowerCSR line=%d\n",__LINE__);
+//            lower_CSR_Ptr_ = new scalarField(lduAddr().lowerAddr().size(), Zero);
+//            calc_lowerCSR();
+//        }
+//    }
+//
+//    return *lower_CSR_Ptr_;
+//}
+//#endif
 
 Foam::scalarField& Foam::lduMatrix::diag()
 {
@@ -234,6 +312,22 @@ Foam::scalarField& Foam::lduMatrix::lower(const label nCoeffs)
 
     return *lowerPtr_;
 }
+
+//#ifdef WITH_CSR
+//Foam::scalarField& Foam::lduMatrix::lowerCSR(const label nCoeffs)
+//{
+//    if (!lower_CSR_Ptr_)
+//    {
+//        {
+//            lower_CSR_Ptr_ = new scalarField(nCoeffs, Zero);
+//            fprintf(stderr,"lower_CSR_Ptr_  unallocated: creating line=%d\n",__LINE__);
+//            calc_lowerCSR();
+//        }
+//    }
+//
+//    return *lower_CSR_Ptr_;
+//}
+//#endif
 
 
 Foam::scalarField& Foam::lduMatrix::diag(const label size)
@@ -284,6 +378,36 @@ const Foam::scalarField& Foam::lduMatrix::lower() const
     }
 }
 
+#ifdef WITH_CSR
+const Foam::scalarField& Foam::lduMatrix::lowerCSR() const
+{
+    if (!lower_CSR_Ptr_)
+    {
+       #ifdef USE_ROCTX
+       roctxRangePush("lduMatrix::lowerCSR");
+       #endif
+       //fprintf(stderr,"in lowerCSR line=%d lduAddr().lowerAddr().size() = %d\n",__LINE__,lduAddr().lowerAddr().size());
+//        fprintf(stderr,"lduAddr().lowerAddr().size() = %d\n",lduAddr().lowerAddr().size());
+        lower_CSR_Ptr_ = new scalarField(lduAddr().lowerAddr().size(), Zero);
+        calc_lowerCSR();
+
+        if (!lower_CSR_Ptr_) 
+	      fprintf(stderr,"!lower_CSR_Ptr_ == true\n");
+
+        #ifdef USE_ROCTX
+        roctxRangePop();
+        #endif
+        return *lower_CSR_Ptr_;
+        //FatalErrorInFunction
+        //    << "lower_CSR_Ptr_  unallocated"
+        //    << abort(FatalError);
+    }
+    else{
+       return *lower_CSR_Ptr_;
+    }
+    
+}
+#endif
 
 const Foam::scalarField& Foam::lduMatrix::diag() const
 {
@@ -371,6 +495,10 @@ Foam::Ostream& Foam::operator<<(Ostream& os, const lduMatrix& ldum)
     Switch hasLow = ldum.hasLower();
     Switch hasDiag = ldum.hasDiag();
     Switch hasUp = ldum.hasUpper();
+    #ifdef WITH_CSR
+    Switch hasLowCSR = ldum.hasLowerCSR();
+    #endif
+
 
     os  << hasLow << token::SPACE << hasDiag << token::SPACE
         << hasUp << token::SPACE;
@@ -389,6 +517,13 @@ Foam::Ostream& Foam::operator<<(Ostream& os, const lduMatrix& ldum)
     {
         os  << ldum.upper();
     }
+    #ifdef WITH_CSR
+    if (hasLowCSR)
+    {
+        os  << ldum.lowerCSR();
+    }
+    #endif
+
 
     os.check(FUNCTION_NAME);
 
@@ -403,6 +538,10 @@ Foam::Ostream& Foam::operator<<(Ostream& os, const InfoProxy<lduMatrix>& ip)
     Switch hasLow = ldum.hasLower();
     Switch hasDiag = ldum.hasDiag();
     Switch hasUp = ldum.hasUpper();
+
+    #ifdef WITH_CSR
+    Switch hasLowCSR = ldum.hasLowerCSR();; 
+    #endif
 
     os  << "Lower:" << hasLow
         << " Diag:" << hasDiag
@@ -421,6 +560,12 @@ Foam::Ostream& Foam::operator<<(Ostream& os, const InfoProxy<lduMatrix>& ip)
         os  << "upper:" << ldum.upper().size() << endl;
     }
 
+    #ifdef WITH_CSR
+    if (hasLowCSR)
+    {
+        os  << "lowerCSR:" << ldum.lowerCSR().size() << endl;
+    }
+    #endif
 
     //if (hasLow)
     //{
@@ -455,5 +600,29 @@ Foam::Ostream& Foam::operator<<(Ostream& os, const InfoProxy<lduMatrix>& ip)
     return os;
 }
 
+#ifdef WITH_CSR
+void Foam::lduMatrix::calc_lowerCSR() const
+{
+
+    const label* __restrict__ uPtr = lduAddr().upperAddr().begin();	
+    const label* __restrict__ lPtr = lduAddr().lowerAddr().begin();
+    const label nFaces = lduAddr().lowerAddr().size(); //check if this is correct
+    const scalar* const __restrict__ lowerPtr = lower().begin();
+    const label* const __restrict__ offsets = lduAddr().L_offsets_CSR().begin();
+    const label* const __restrict__ inrow_offset = lduAddr().L_inrow_offsets_CSR().begin(); 
+
+    const label nCellsL = lduAddr().L_offsets_CSR().size()-1; 
+
+    auto& lower_csr_coeffs_Ptr = *lower_CSR_Ptr_;
+
+    //save coeficients  in CSR format
+    #pragma omp target teams distribute parallel for if(nFaces > 3000)
+    for (label face=0; face < nFaces; face++){
+
+        label cell = uPtr[face];
+        lower_csr_coeffs_Ptr[ offsets[ cell] + inrow_offset[face] ] = lowerPtr[face];
+   }
+}
+#endif
 
 // ************************************************************************* //

@@ -439,8 +439,8 @@ Foam::fv::cellMDLimitedGrad<Foam::vector>::calcGrad
 	const label nf = (loop_len-facei) > 1 ? 2 : 1;
  
 	for (label i = 0; i < nf; ++i){
-          const label own = owner[facei];
-          const label nei = neighbour[facei];
+          const label own = owner[facei+i];
+          const label nei = neighbour[facei+i];
           const Foam::Vector<scalar>& vsfOwn = vsf[own];
           const Foam::Vector<scalar>& vsfNei = vsf[nei];
 
